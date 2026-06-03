@@ -1,0 +1,207 @@
+Coding Problem 4: The "Deep-Sea Telemetry" Error Hierarchy (Checked vs. Unchecked)
+Answer
+
+This problem tests:
+
+Checked Exceptions (extends Exception)
+Unchecked Exceptions (extends RuntimeException)
+Try-With-Resources
+AutoCloseable Interface
+Exception Hierarchy
+Checked Exception
+
+A checked exception must be either:
+
+Caught using try-catch
+Or declared using throws
+
+Example:
+
+class HardwareLockException extends Exception {
+    public HardwareLockException(String message) {
+        super(message);
+    }
+}
+
+Used for:
+
+File locked by OS
+Network unavailable
+Database unavailable
+
+These are recoverable situations.
+
+Unchecked Exception
+
+Extends RuntimeException.
+
+class SensorCorruptionException
+        extends RuntimeException {
+
+    public SensorCorruptionException(
+            String message) {
+
+        super(message);
+    }
+}
+
+Used for:
+
+Impossible sensor values
+Corrupted readings
+Logic errors
+
+These do not require throws.
+
+AutoCloseable Resource
+
+Dummy telemetry stream:
+
+class TelemetryStream
+        implements AutoCloseable {
+
+    public void readData() {
+        System.out.println(
+                "Reading telemetry data...");
+    }
+
+    @Override
+    public void close() {
+        System.out.println(
+                "TelemetryStream Closed");
+    }
+}
+Main Parser Implementation
+class HardwareLockException
+        extends Exception {
+
+    public HardwareLockException(
+            String message) {
+
+        super(message);
+    }
+}
+
+class SensorCorruptionException
+        extends RuntimeException {
+
+    public SensorCorruptionException(
+            String message) {
+
+        super(message);
+    }
+}
+
+class TelemetryStream
+        implements AutoCloseable {
+
+    public void readData() {
+
+        System.out.println(
+                "Reading telemetry data...");
+    }
+
+    @Override
+    public void close() {
+
+        System.out.println(
+                "TelemetryStream Closed");
+    }
+}
+
+public class Main {
+
+    public static void parseTelemetry()
+            throws HardwareLockException {
+
+        try (TelemetryStream stream =
+                     new TelemetryStream()) {
+
+            stream.readData();
+
+            boolean fileLocked = false;
+            int temperature = 500;
+
+            if (fileLocked) {
+                throw new HardwareLockException(
+                        "Telemetry file locked");
+            }
+
+            if (temperature > 100) {
+                throw new SensorCorruptionException(
+                        "Impossible temperature detected");
+            }
+
+            System.out.println(
+                    "Telemetry Parsed Successfully");
+        }
+    }
+
+    public static void main(String[] args) {
+
+        try {
+
+            parseTelemetry();
+
+        } catch (HardwareLockException e) {
+
+            System.out.println(
+                    "Hardware Error: "
+                    + e.getMessage());
+
+        } catch (SensorCorruptionException e) {
+
+            System.out.println(
+                    "Sensor Error: "
+                    + e.getMessage());
+        }
+    }
+}
+Output
+Reading telemetry data...
+
+TelemetryStream Closed
+
+Sensor Error:
+Impossible temperature detected
+
+Notice:
+
+TelemetryStream Closed
+
+is printed even though an exception occurred.
+
+This proves that Try-With-Resources automatically closes resources.
+
+How Try-With-Resources Works
+
+Normal approach:
+
+try {
+    ...
+}
+finally {
+    resource.close();
+}
+
+Modern approach:
+
+try(Resource r = new Resource()){
+    ...
+}
+
+Java automatically generates the equivalent finally block.
+
+Checked vs Unchecked
+Feature	Checked Exception	Unchecked Exception
+Parent Class	Exception	RuntimeException
+Compile-time Checking	Yes	No
+Requires throws	Yes	No
+Recoverable Errors	Yes	Usually No
+Example	IOException	NullPointerException
+Real-World Mapping
+Scenario	Exception Type
+File Locked	HardwareLockException
+Database Down	HardwareLockException
+Temperature = 500°C	SensorCorruptionException
+Pressure Sensor Corrupted	SensorCorruptionException
