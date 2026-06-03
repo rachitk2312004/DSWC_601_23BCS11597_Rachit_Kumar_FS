@@ -1,0 +1,159 @@
+Coding Problem 3: The "DNA Sequencer" Memory Leak (String Immutability)
+Answer
+Problem with String +=
+
+Bad approach:
+
+String dna = "";
+
+for(char c : sensorData){
+    dna += c;
+}
+
+Every += creates a new String object because Strings are immutable.
+
+For 100,000 characters:
+
+String1
+String2
+String3
+...
+String100000
+
+This creates huge Garbage Collection overhead and may cause:
+
+OutOfMemoryError
+Correct Solution
+
+Use StringBuilder because it is mutable.
+
+Also provide an initial capacity:
+
+StringBuilder dnaSequence =
+        new StringBuilder(100000);
+
+This prevents continuous resizing of the internal character array.
+
+Required Methods
+1. ingestSequence(char[] sensorData)
+
+Efficiently append characters.
+
+2. mutateDNA(String target, String replacement)
+
+Find the first occurrence and replace it directly using:
+
+replace(start, end, replacement)
+
+without creating unnecessary String objects.
+
+Code
+class DNASequencer {
+
+    private StringBuilder dnaSequence;
+
+    public DNASequencer(int capacity) {
+        dnaSequence = new StringBuilder(capacity);
+    }
+
+    // Append sensor data efficiently
+    public void ingestSequence(char[] sensorData) {
+
+        for (char c : sensorData) {
+            dnaSequence.append(c);
+        }
+    }
+
+    // Replace first occurrence
+    public void mutateDNA(String target,
+                          String replacement) {
+
+        int index =
+                dnaSequence.indexOf(target);
+
+        if (index != -1) {
+
+            dnaSequence.replace(
+                    index,
+                    index + target.length(),
+                    replacement
+            );
+        }
+    }
+
+    public String getDNA() {
+        return dnaSequence.toString();
+    }
+}
+
+public class Main {
+
+    public static void main(String[] args) {
+
+        DNASequencer sequencer =
+                new DNASequencer(100000);
+
+        char[] sensorData = {
+                'A','T','G','C',
+                'A','A','T','G'
+        };
+
+        sequencer.ingestSequence(sensorData);
+
+        System.out.println(
+                "Original DNA: "
+                + sequencer.getDNA());
+
+        sequencer.mutateDNA(
+                "ATG",
+                "GGG"
+        );
+
+        System.out.println(
+                "Mutated DNA: "
+                + sequencer.getDNA());
+    }
+}
+Output
+Original DNA: ATGCAATG
+
+Mutated DNA: GGGCAATG
+Memory Comparison
+Using String
+String dna = "";
+
+for(char c : sensorData){
+    dna += c;
+}
+
+Creates:
+
+100000+
+temporary String objects
+
+Time Complexity:
+
+O(n²)
+
+Memory Usage:
+
+Very High
+Using StringBuilder
+StringBuilder sb =
+        new StringBuilder(100000);
+
+for(char c : sensorData){
+    sb.append(c);
+}
+
+Creates:
+
+1 StringBuilder object
+
+Time Complexity:
+
+O(n)
+
+Memory Usage:
+
+Low
