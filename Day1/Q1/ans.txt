@@ -1,0 +1,88 @@
+Coding Problem 1: The Interstellar Mining Fleet Manager
+Answer
+
+Data Types
+
+Ship ID → short (up to 30,000)
+Bay Number → byte (up to 100)
+Operational Status → boolean
+Fleet Classification → char
+Ore Weight → float
+Total Fleet Value → long (> 40 billion)
+Code
+abstract class SpaceVessel {
+    protected short shipId;
+    protected boolean operationalStatus;
+    protected char fleetClassification;
+
+    public SpaceVessel(short shipId, boolean status, char classification) {
+        this.shipId = shipId;
+        this.operationalStatus = status;
+        this.fleetClassification = classification;
+    }
+}
+
+class MiningShip extends SpaceVessel {
+
+    private float[][] cargoHold;
+
+    public MiningShip(short shipId, boolean status,
+                      char classification, float[][] cargoHold) {
+        super(shipId, status, classification);
+        this.cargoHold = cargoHold;
+    }
+
+    public float calculateTotalOreWeight() {
+        float total = 0;
+
+        for (float[] bay : cargoHold) {
+            for (float weight : bay) {
+                total += weight;
+            }
+        }
+        return total;
+    }
+
+    public float findHeaviestContainer() {
+        float max = Float.MIN_VALUE;
+
+        for (float[] bay : cargoHold) {
+            for (float weight : bay) {
+                if (weight > max) {
+                    max = weight;
+                }
+            }
+        }
+        return max;
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+
+        float[][] cargo = {
+            {1000.5f, 2500.7f},
+            {4500.2f, 1200.4f}
+        };
+
+        SpaceVessel[] fleet = new SpaceVessel[1];
+
+        MiningShip ship = new MiningShip(
+                (short)1001,
+                true,
+                'A',
+                cargo
+        );
+
+        fleet[0] = ship;
+
+        System.out.println("Total Ore = " +
+                ship.calculateTotalOreWeight());
+
+        System.out.println("Heaviest Container = " +
+                ship.findHeaviestContainer());
+    }
+}
+Output
+Total Ore = 9201.8
+Heaviest Container = 4500.2
