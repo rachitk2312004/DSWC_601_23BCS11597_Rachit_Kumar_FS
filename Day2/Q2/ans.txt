@@ -1,0 +1,198 @@
+Q2 ANSWER — AeroLogix Drone Fleet
+===================================
+Concepts: Interface Segregation, Default Methods (Java 8+), Multiple Interface Implementation
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question is about two things: keeping your interfaces focused (not bloated),
+and understanding what Java 8 default methods actually solved.
+
+Imagine if you had one giant DroneCapabilities interface with both flyToDestination()
+and navigateSidewalks() in it. Then a CityRover — which only rolls on the ground —
+would be forced to implement flyToDestination(). What would you even write there?
+Throw an exception? Leave it blank? Both are terrible.
+
+That's why we split it. Airborne is for things that fly. GroundBased is for things
+that roll. HybridVTOL does both, so it implements both. Clean, honest, no faking.
+This is called the Interface Segregation Principle — don't force a class to depend
+on methods it doesn't need.
+
+
+THE DEFAULT METHOD — WHY IT EXISTS
+------------------------------------
+Every flying drone — Quadcopter and HybridVTOL — has to request air traffic clearance
+before taking off. The logic is identical for both. So where do you put it?
+
+Option A: Copy-paste it into both classes. Horrible. Now you have two places to update
+when the ATC message changes.
+
+Option B: Put it in DeliveryDrone (the abstract class). But CityRover also extends
+DeliveryDrone and it never flies. Giving it a clearance method makes no sense.
+
+Option C (the right answer): Put it as a default method in the Airborne interface.
+Only flying drones implement Airborne, so only they get the method. And since it's
+a default method, they don't even have to override it — they get it for free.
+
+Before Java 8, interfaces couldn't have method bodies at all. If you added a new
+method to an interface, every single class that implemented it would break. Default
+methods fixed that — you can add new behavior to an interface without breaking
+existing implementations. That's why it was a big deal.
+
+
+MULTIPLE INTERFACES ON HybridVTOL
+-----------------------------------
+HybridVTOL implements both Airborne and GroundBased. Java is perfectly fine with
+this because interfaces don't carry instance fields. There's no "diamond problem"
+here because there's no question of which droneId to use — there's only one,
+inherited from DeliveryDrone.
+
+The diamond problem only gets messy when two interfaces have a default method
+with the exact same signature. In that case, Java forces the implementing class
+to override it and decide which one to use (or write its own). We didn't have
+that conflict here, so HybridVTOL just gets both interfaces' methods cleanly.
+
+
+THE POLYMORPHISM IN THE DISPATCH LOOP
+---------------------------------------
+In main(), the fleet is a DeliveryDrone[] array. Calling drone.deliverPackage()
+on each one triggers Late Binding — the JVM runs the correct subclass version
+each time. The dispatch system has no idea what kind of drone it's holding.
+Adding a new drone type tomorrow is just writing a new class and dropping it
+in the array. The loop itself never changes.
+
+
+CLASS STRUCTURE AT A GLANCE
+-----------------------------
+
+  DeliveryDrone (abstract)
+  + deliverPackage()  <abstract>
+        |
+        +──────────────────────────────────
+        |              |                  |
+   Quadcopter      CityRover         HybridVTOL
+   (Airborne)      (GroundBased)     (Airborne + GroundBased)
+
+  Airborne (interface)              GroundBased (interface)
+  + flyToDestination()              + navigateSidewalks()
+  + requestAirTrafficClearance()    (abstract only)
+    [DEFAULT METHOD - shared]
+
+
+SAMPLE OUTPUT
+--------------
+===== AEROLOGIX DISPATCH SYSTEM =====
+
+[QC-101 | QUADCOPTER] Starting delivery...
+  [ATC REQUEST] Drone requesting airspace clearance. Standby for authorization...
+  [ATC GRANTED] Clearance confirmed. Safe to proceed.
+  [FLY] Ascending and navigating aerial waypoints.
+[QC-101] Package delivered via air route.
+
+[CR-202 | CITY ROVER] Starting delivery...
+  [GROUND] Mapping pedestrian paths and avoiding obstacles.
+[CR-202] Package delivered via ground route.
+
+[HV-303 | HYBRID VTOL] Starting delivery...
+  [ATC REQUEST] Drone requesting airspace clearance. Standby for authorization...
+  [ATC GRANTED] Clearance confirmed. Safe to proceed.
+  [FLY] Vertical take-off. Cruising at altitude.
+  [VTOL] Switching to ground mode for final 200m...
+  [GROUND] Rolling on retractable wheels to front door.
+[HV-303] Package delivered via hybrid route.
+
+===== ALL DELIVERIES COMPLETE =====
+
+
+FULL CODE (also in AeroLogixFleet.java)
+-----------------------------------------
+
+abstract class DeliveryDrone {
+    protected String droneId;
+    public DeliveryDrone(String droneId) { this.droneId = droneId; }
+    public abstract void deliverPackage();
+}
+
+interface Airborne {
+    void flyToDestination();
+    default void requestAirTrafficClearance() {
+        System.out.println("  [ATC REQUEST] Drone requesting airspace clearance. Standby for authorization...");
+        System.out.println("  [ATC GRANTED] Clearance confirmed. Safe to proceed.");
+    }
+}
+
+interface GroundBased {
+    void navigateSidewalks();
+}
+
+class Quadcopter extends DeliveryDrone implements Airborne {
+    public Quadcopter(String droneId) { super(droneId); }
+
+    @Override
+    public void deliverPackage() {
+        System.out.println("\n[" + droneId + " | QUADCOPTER] Starting delivery...");
+        requestAirTrafficClearance();
+        flyToDestination();
+        System.out.println("[" + droneId + "] Package delivered via air route.");
+    }
+
+    @Override
+    public void flyToDestination() {
+        System.out.println("  [FLY] Ascending and navigating aerial waypoints.");
+    }
+}
+
+class CityRover extends DeliveryDrone implements GroundBased {
+    public CityRover(String droneId) { super(droneId); }
+
+    @Override
+    public void deliverPackage() {
+        System.out.println("\n[" + droneId + " | CITY ROVER] Starting delivery...");
+        navigateSidewalks();
+        System.out.println("[" + droneId + "] Package delivered via ground route.");
+    }
+
+    @Override
+    public void navigateSidewalks() {
+        System.out.println("  [GROUND] Mapping pedestrian paths and avoiding obstacles.");
+    }
+}
+
+class HybridVTOL extends DeliveryDrone implements Airborne, GroundBased {
+    public HybridVTOL(String droneId) { super(droneId); }
+
+    @Override
+    public void deliverPackage() {
+        System.out.println("\n[" + droneId + " | HYBRID VTOL] Starting delivery...");
+        requestAirTrafficClearance();
+        flyToDestination();
+        System.out.println("  [VTOL] Switching to ground mode for final 200m...");
+        navigateSidewalks();
+        System.out.println("[" + droneId + "] Package delivered via hybrid route.");
+    }
+
+    @Override
+    public void flyToDestination() {
+        System.out.println("  [FLY] Vertical take-off. Cruising at altitude.");
+    }
+
+    @Override
+    public void navigateSidewalks() {
+        System.out.println("  [GROUND] Rolling on retractable wheels to front door.");
+    }
+}
+
+public class AeroLogixFleet {
+    public static void main(String[] args) {
+        System.out.println("===== AEROLOGIX DISPATCH SYSTEM =====");
+        DeliveryDrone[] fleet = {
+            new Quadcopter("QC-101"),
+            new CityRover("CR-202"),
+            new HybridVTOL("HV-303")
+        };
+        for (DeliveryDrone drone : fleet) {
+            drone.deliverPackage();
+        }
+        System.out.println("\n===== ALL DELIVERIES COMPLETE =====");
+    }
+}

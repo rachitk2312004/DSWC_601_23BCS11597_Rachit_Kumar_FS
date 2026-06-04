@@ -1,0 +1,199 @@
+Q3 ANSWER — VaultGuard State Machine
+======================================
+Concepts: Enums, Custom Exceptions, Strict Encapsulation, Fail-Fast Design
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question is really about one thing: encapsulation done properly, not
+the lazy version.
+
+Most beginners, when they see a private field, immediately auto-generate a
+getter AND a setter. They think that's good OOP because the field is private.
+But a setter for "state" on a vault door is just as dangerous as making the
+field public — anyone can call setState(DoorState.LOCKED) and jump the door
+from OPEN to LOCKED without physically closing it first. That's a security bug.
+
+Real encapsulation means: the field is private, and state only changes through
+meaningful behavior methods — closeDoor(), lockDoor(), unlockDoor() — that
+validate whether the transition is actually legal before allowing it.
+
+
+WHY AN ENUM FOR DoorState?
+---------------------------
+Because strings and integers are terrible for representing fixed states.
+
+If you used a String, someone could accidentally set state = "locked" (lowercase)
+and your if (state.equals("LOCKED")) check would silently fail. No compiler error.
+Just a bug that shows up in production.
+
+With an enum, if you try to assign DoorState.AJAR, the compiler stops you
+immediately. There's no such thing. The possible values are exactly OPEN, CLOSED,
+and LOCKED — nothing else. That's the kind of guarantee you want in firmware.
+
+
+THE CUSTOM EXCEPTION — WHY UNCHECKED?
+---------------------------------------
+IllegalStateTransitionException extends RuntimeException, which makes it unchecked.
+Here's why that's the right call:
+
+A checked exception (like IOException) is for situations the caller should
+reasonably expect and recover from — like a file not found. You'd want to
+write retry logic.
+
+An illegal state transition is different. If someone is trying to lock an open
+door, that's a programming mistake — the caller should have called closeDoor()
+first. We don't want to force every caller to wrap lockDoor() in a try-catch.
+That would make the code ugly and give a false impression that this is a normal,
+recoverable situation. It's not. We throw loud and fast so the developer sees
+it immediately during testing.
+
+
+FAIL-FAST: WHY THROW IMMEDIATELY?
+------------------------------------
+Think about what happens if you DON'T throw the exception. The door is OPEN.
+Someone calls lockDoor(). You silently set state = LOCKED. Now your software
+thinks the door is locked, but physically it's wide open. That's a silent
+failure — the worst kind. It won't crash. It'll just be wrong, and you might
+not find out until it's too late.
+
+Throwing an exception the moment you detect the illegal request is called
+"fail-fast." It's a core principle in systems where correctness matters —
+banking, medical, security firmware. Better to crash loudly in development
+than to be silently wrong in production.
+
+
+STATE TRANSITIONS — THE RULES
+-------------------------------
+Here's the only legal path through the states:
+
+  CLOSED --[openDoor()]--> OPEN
+  OPEN   --[closeDoor()]--> CLOSED
+  CLOSED --[lockDoor()]--> LOCKED
+  LOCKED --[unlockDoor()]--> CLOSED
+
+  OPEN --[lockDoor()]--> EXCEPTION (you must close first)
+
+Notice there's no direct path from OPEN to LOCKED. That's intentional —
+a real vault door can't be locked while open. The code enforces physical reality.
+
+
+SAMPLE OUTPUT
+--------------
+===== VAULTGUARD FIRMWARE TEST =====
+
+[VaultDoor] Initialized. State: CLOSED
+
+-- SCENARIO 1: Normal valid operations --
+[VaultDoor] Door opened successfully. State: OPEN
+[VaultDoor] Door closed successfully. State: CLOSED
+[VaultDoor] Door locked successfully. State: LOCKED
+[VaultDoor] Door unlocked. State: CLOSED
+[VaultDoor] Door opened successfully. State: OPEN
+
+-- SCENARIO 2: Illegal transition (OPEN -> LOCKED) --
+[EXCEPTION CAUGHT] ILLEGAL TRANSITION: Cannot lock an OPEN door. Close the door first before locking.
+
+-- SCENARIO 3: State integrity check --
+Current State after failed lock: OPEN
+[VaultDoor] Door closed successfully. State: CLOSED
+[VaultDoor] Door locked successfully. State: LOCKED
+Final State: LOCKED
+
+===== TEST COMPLETE =====
+
+
+FULL CODE (also in VaultGuard.java)
+-------------------------------------
+
+enum DoorState {
+    OPEN, CLOSED, LOCKED
+}
+
+class IllegalStateTransitionException extends RuntimeException {
+    public IllegalStateTransitionException(String message) {
+        super(message);
+    }
+}
+
+class VaultDoor {
+    private DoorState state;
+
+    public VaultDoor() {
+        this.state = DoorState.CLOSED;
+        System.out.println("[VaultDoor] Initialized. State: " + state);
+    }
+
+    public DoorState getState() { return state; }
+
+    public void openDoor() {
+        if (state == DoorState.LOCKED)
+            throw new IllegalStateTransitionException(
+                "Cannot open door: door is LOCKED. Unlock it first.");
+        if (state == DoorState.OPEN) {
+            System.out.println("[VaultDoor] Door is already OPEN.");
+            return;
+        }
+        state = DoorState.OPEN;
+        System.out.println("[VaultDoor] Door opened successfully. State: " + state);
+    }
+
+    public void closeDoor() {
+        if (state == DoorState.CLOSED || state == DoorState.LOCKED) {
+            System.out.println("[VaultDoor] Door is already CLOSED/LOCKED.");
+            return;
+        }
+        state = DoorState.CLOSED;
+        System.out.println("[VaultDoor] Door closed successfully. State: " + state);
+    }
+
+    public void lockDoor() {
+        if (state == DoorState.OPEN)
+            throw new IllegalStateTransitionException(
+                "ILLEGAL TRANSITION: Cannot lock an OPEN door. Close the door first before locking.");
+        if (state == DoorState.LOCKED) {
+            System.out.println("[VaultDoor] Door is already LOCKED.");
+            return;
+        }
+        state = DoorState.LOCKED;
+        System.out.println("[VaultDoor] Door locked successfully. State: " + state);
+    }
+
+    public void unlockDoor() {
+        if (state != DoorState.LOCKED) {
+            System.out.println("[VaultDoor] Door is not locked. Current state: " + state);
+            return;
+        }
+        state = DoorState.CLOSED;
+        System.out.println("[VaultDoor] Door unlocked. State: " + state);
+    }
+}
+
+public class VaultGuard {
+    public static void main(String[] args) {
+        System.out.println("===== VAULTGUARD FIRMWARE TEST =====\n");
+        VaultDoor door = new VaultDoor();
+
+        System.out.println("\n-- SCENARIO 1: Normal valid operations --");
+        door.openDoor();
+        door.closeDoor();
+        door.lockDoor();
+        door.unlockDoor();
+        door.openDoor();
+
+        System.out.println("\n-- SCENARIO 2: Illegal transition (OPEN -> LOCKED) --");
+        try {
+            door.lockDoor();
+        } catch (IllegalStateTransitionException e) {
+            System.out.println("[EXCEPTION CAUGHT] " + e.getMessage());
+        }
+
+        System.out.println("\n-- SCENARIO 3: State integrity check --");
+        System.out.println("Current State after failed lock: " + door.getState());
+        door.closeDoor();
+        door.lockDoor();
+        System.out.println("Final State: " + door.getState());
+
+        System.out.println("\n===== TEST COMPLETE =====");
+    }
+}

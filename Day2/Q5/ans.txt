@@ -1,0 +1,238 @@
+Q5 ANSWER — DataStream ETL Pipeline
+======================================
+Concepts: Java Generics, Upper Bounded Type Parameters, Compile-Time Safety
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+Before Generics existed (pre-Java 5), if you wanted a processor that could
+handle any kind of DataPayload, you'd write it to accept Object:
+
+    public void process(Object payload) {
+        DataPayload dp = (DataPayload) payload;  // manual downcast
+        dp.getRawContent();
+    }
+
+This compiles fine. But if someone accidentally passes a String or an Integer,
+it also compiles fine. You only find out something went wrong when the JVM
+tries to cast at runtime and throws a ClassCastException. In production. Possibly
+handling real customer data.
+
+Generics shift that crash from runtime to compile time. The problem is caught
+the moment you write the wrong code, not the moment you run it.
+
+
+THE UPPER BOUND — WHY <T extends DataPayload> AND NOT JUST <T>?
+-----------------------------------------------------------------
+Good question — this is the part most people get wrong.
+
+If you just write class PipelineProcessor<T>, then inside the class, the
+compiler has no idea what T is. It could be anything. So when you write:
+
+    payload.getRawContent();
+
+The compiler says: "I don't know what T is. What if someone passes an Integer?
+Integer doesn't have getRawContent(). I'm not allowing this." Compile error.
+
+But when you write class PipelineProcessor<T extends DataPayload>, you're
+making a promise to the compiler: "T will always be DataPayload or one of its
+subclasses. I guarantee it." Now the compiler knows that T definitely has the
+getRawContent() method, and it lets you call it without any cast.
+
+That's all the extends keyword does in a generic type parameter — it's a
+compile-time guarantee about what methods T is allowed to have.
+
+
+THE TYPE SAFETY IN PRACTICE
+-----------------------------
+Once you declare PipelineProcessor<JsonPayload>, that processor will only
+accept JsonPayload objects. Try passing an XmlPayload — compile error. Try
+creating PipelineProcessor<String> — compile error (String doesn't extend
+DataPayload).
+
+The beauty of this is that the errors are immediate and obvious. You don't
+need to run the code. You don't need tests for it. The compiler enforces
+the contract before you even compile.
+
+Compare that to the Object-based version: you'd need runtime tests, defensive
+instanceof checks everywhere, and hope that every developer in the team
+remembers to pass the right type. That's not a system — that's a prayer.
+
+
+TYPE ERASURE — THE HONEST FOOTNOTE
+------------------------------------
+Here's something worth knowing for an interview: at runtime, Generics don't
+actually exist in the bytecode. The JVM erases them. PipelineProcessor<JsonPayload>
+and PipelineProcessor<XmlPayload> compile down to the exact same bytecode —
+both just become PipelineProcessor with DataPayload (the upper bound) as the
+internal type.
+
+So Generics are purely a compile-time feature. They exist to help YOU and the
+compiler catch mistakes. The JVM itself doesn't use them at runtime. This is
+called "type erasure," and it's why you can't do things like new T() inside a
+generic class — T doesn't exist at runtime.
+
+
+THE ETL FLOW (WHAT THE CODE ACTUALLY DOES)
+-------------------------------------------
+ETL stands for Extract, Transform, Load — a classic data engineering pattern:
+
+1. Extract: getRawContent() pulls the raw JSON or XML string.
+2. Transform: we uppercase and trim it (simplified, but the idea is processing).
+3. Load: we simulate writing to a data warehouse.
+
+The point isn't the transformation logic — it's that the SAME PipelineProcessor
+class handles both JsonPayload and XmlPayload cleanly, with zero casting,
+and the compiler prevents you from mixing them up.
+
+
+CLASS STRUCTURE AT A GLANCE
+-----------------------------
+
+  DataPayload (abstract)
+  + getRawContent()  <abstract>
+  + getSource()
+        |
+        +───────────────────
+        |                  |
+  JsonPayload          XmlPayload
+
+  PipelineProcessor<T extends DataPayload>
+  + process(T payload)      -- T is guaranteed to have getRawContent()
+  + processBatch(List<T>)
+
+  Usage:
+  PipelineProcessor<JsonPayload> -- only accepts JsonPayload
+  PipelineProcessor<XmlPayload>  -- only accepts XmlPayload
+  PipelineProcessor<String>      -- COMPILE ERROR (String not a DataPayload)
+
+
+COMPILE-TIME SAFETY SUMMARY
+-----------------------------
+
+  What you write                              | Result
+  --------------------------------------------|------------------
+  jsonProcessor.process(jsonPayload)           | OK
+  xmlProcessor.process(xmlPayload)             | OK
+  jsonProcessor.process(xmlPayload)            | COMPILE ERROR
+  new PipelineProcessor<String>(...)           | COMPILE ERROR
+  (old way) ((DataPayload) someObject)         | Compiles, may crash at runtime
+
+
+SAMPLE OUTPUT
+--------------
+===== DATASTREAM ETL PIPELINE =====
+
+[JSON-Processor-01] Received payload from source: REST API v2
+[JSON-Processor-01] Extracting raw content...
+[JSON-Processor-01] Content: { "userId": 42, "action": "purchase", "amount": 150.00 }
+[JSON-Processor-01] Transforming data...
+[JSON-Processor-01] Transformed: { "USERID": 42, "ACTION": "PURCHASE", "AMOUNT": 150.00 }
+[JSON-Processor-01] Loading into data warehouse... DONE.
+
+[XML-Processor-01] Received payload from source: Legacy ERP System
+[XML-Processor-01] Extracting raw content...
+[XML-Processor-01] Content: <order><id>5001</id><product>Widget</product><qty>10</qty></order>
+[XML-Processor-01] Transforming data...
+[XML-Processor-01] Transformed: <ORDER><ID>5001</ID><PRODUCT>WIDGET</PRODUCT><QTY>10</QTY></ORDER>
+[XML-Processor-01] Loading into data warehouse... DONE.
+
+===== ETL PIPELINE COMPLETE =====
+
+
+FULL CODE (also in DataStreamETL.java)
+----------------------------------------
+
+abstract class DataPayload {
+    private String source;
+
+    public DataPayload(String source) { this.source = source; }
+
+    public abstract String getRawContent();
+    public String getSource() { return source; }
+}
+
+class JsonPayload extends DataPayload {
+    private String jsonBody;
+
+    public JsonPayload(String source, String jsonBody) {
+        super(source);
+        this.jsonBody = jsonBody;
+    }
+
+    @Override
+    public String getRawContent() { return jsonBody; }
+}
+
+class XmlPayload extends DataPayload {
+    private String xmlBody;
+
+    public XmlPayload(String source, String xmlBody) {
+        super(source);
+        this.xmlBody = xmlBody;
+    }
+
+    @Override
+    public String getRawContent() { return xmlBody; }
+}
+
+class PipelineProcessor<T extends DataPayload> {
+    private String processorName;
+
+    public PipelineProcessor(String processorName) {
+        this.processorName = processorName;
+    }
+
+    public void process(T payload) {
+        System.out.println("[" + processorName + "] Received payload from source: "
+                + payload.getSource());
+        System.out.println("[" + processorName + "] Extracting raw content...");
+
+        String content = payload.getRawContent(); // no cast needed -- upper bound guarantees this
+        System.out.println("[" + processorName + "] Content: " + content);
+
+        System.out.println("[" + processorName + "] Transforming data...");
+        String transformed = content.trim().toUpperCase();
+        System.out.println("[" + processorName + "] Transformed: " + transformed);
+
+        System.out.println("[" + processorName + "] Loading into data warehouse... DONE.");
+    }
+
+    public void processBatch(java.util.List<T> payloads) {
+        System.out.println("\n[" + processorName + "] --- BATCH START ("
+                + payloads.size() + " payloads) ---");
+        int index = 1;
+        for (T payload : payloads) {
+            System.out.println("  Payload #" + index++ + ":");
+            process(payload);
+        }
+        System.out.println("[" + processorName + "] --- BATCH END ---");
+    }
+}
+
+public class DataStreamETL {
+    public static void main(String[] args) {
+        System.out.println("===== DATASTREAM ETL PIPELINE =====");
+
+        PipelineProcessor<JsonPayload> jsonProcessor =
+                new PipelineProcessor<>("JSON-Processor-01");
+        JsonPayload jp1 = new JsonPayload("REST API v2",
+                "{ \"userId\": 42, \"action\": \"purchase\", \"amount\": 150.00 }");
+        JsonPayload jp2 = new JsonPayload("Mobile App",
+                "{ \"event\": \"login\", \"timestamp\": \"2025-06-01T10:00:00Z\" }");
+        jsonProcessor.process(jp1);
+
+        PipelineProcessor<XmlPayload> xmlProcessor =
+                new PipelineProcessor<>("XML-Processor-01");
+        XmlPayload xp1 = new XmlPayload("Legacy ERP System",
+                "<order><id>5001</id><product>Widget</product><qty>10</qty></order>");
+        xmlProcessor.process(xp1);
+
+        java.util.List<JsonPayload> jsonBatch = java.util.Arrays.asList(jp1, jp2);
+        jsonProcessor.processBatch(jsonBatch);
+
+        // jsonProcessor.process(xp1);  <-- uncomment to see compile-time error
+
+        System.out.println("\n===== ETL PIPELINE COMPLETE =====");
+    }
+}

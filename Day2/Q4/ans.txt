@@ -1,0 +1,212 @@
+Q4 ANSWER — FinTech Payment Routing Engine
+============================================
+Concepts: Strategy Pattern, Composition over Inheritance, Open/Closed Principle
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+The core problem this question is solving: what do you do when you have
+multiple versions of the same operation (process a credit card, process
+crypto, process PayPal), and you don't want one giant class full of
+if/else statements managing all of them?
+
+The naive version looks like this:
+
+    public void executeTransaction(double amount, String type) {
+        if (type.equals("CREDIT")) { ... }
+        else if (type.equals("CRYPTO")) { ... }
+        else if (type.equals("PAYPAL")) { ... }
+    }
+
+This works fine until the company decides to add Apple Pay. Now you have
+to open executeTransaction() and add another else if. And another. Forever.
+Every new payment method = editing existing, tested code. That's risky.
+
+The Strategy Pattern says: pull each payment algorithm into its own class,
+and have the processor just talk to an interface. Then swapping algorithms
+is as simple as swapping the object.
+
+
+COMPOSITION OVER INHERITANCE — WHAT IT ACTUALLY MEANS
+-------------------------------------------------------
+You might wonder: why not just subclass TransactionProcessor?
+Like CreditCardProcessor extends TransactionProcessor?
+
+The problem is that inheritance is baked in at compile time. You can't
+change a class's parent at runtime. So if a user halfway through checkout
+decides to switch from credit card to PayPal, you'd have to create an
+entirely new object.
+
+With composition, TransactionProcessor just holds a reference to a
+PaymentStrategy object. Changing the payment method is one line:
+    processor.setPaymentStrategy(new PayPalStrategy(...));
+
+No new object. No rebuilding. The processor itself stays the same.
+The behavior just gets swapped under the hood.
+
+
+THE OPEN/CLOSED PRINCIPLE
+--------------------------
+This is the "O" in SOLID. The idea is:
+- A class should be OPEN for extension (easy to add new behavior).
+- But CLOSED for modification (you don't need to touch existing code to add it).
+
+TransactionProcessor is a perfect example. To add Apple Pay:
+1. Write a new class: ApplePayStrategy implements PaymentStrategy
+2. Done.
+
+You never open TransactionProcessor.java. You never touch executeTransaction().
+You never risk breaking existing credit card or crypto processing. The new
+strategy just plugs in through the interface.
+
+
+HOW DEPENDENCY INJECTION FITS IN
+----------------------------------
+The strategy is passed in through the constructor ("constructor injection")
+or through a setter ("setter injection"). Both are forms of Dependency Injection.
+
+Constructor injection is great for "I know what strategy I want from the start."
+Setter injection is great for "I might change strategies at runtime" — like
+letting a user switch payment methods mid-checkout. We support both here.
+
+
+CLASS STRUCTURE AT A GLANCE
+-----------------------------
+
+  PaymentStrategy (interface)
+  + processPayment(amount): boolean
+        |
+        +─────────────────────────────────
+        |                |               |
+  CreditCardStrategy  CryptoStrategy  PayPalStrategy
+  (implements)        (implements)    (implements)
+
+  TransactionProcessor
+  - strategy: PaymentStrategy    <-- composition (HAS-A)
+  + TransactionProcessor(strategy)
+  + setPaymentStrategy(strategy) <-- runtime swap
+  + executeTransaction(amount)   <-- delegates to strategy
+
+
+SAMPLE OUTPUT
+--------------
+===== FINTECH PAYMENT ROUTING ENGINE =====
+
+[TRANSACTION] Processing payment of $299.99...
+  [CREDIT CARD] Charging $299.99 to card ending in 1234 (Holder: Venkatesh Kumar)...
+  [CREDIT CARD] Transaction approved by payment network.
+[TRANSACTION] SUCCESS — $299.99 processed.
+
+  [PROCESSOR] Switching payment strategy to: CryptoStrategy
+
+[TRANSACTION] Processing payment of $1499.00...
+  [CRYPTO] Sending $1499.00 worth of Bitcoin to wallet 1A2b3C4d5E6f7G8h9I0j...
+  [CRYPTO] Transaction broadcast to blockchain. Awaiting confirmation.
+[TRANSACTION] SUCCESS — $1499.00 processed.
+
+  [PROCESSOR] Switching payment strategy to: PayPalStrategy
+
+[TRANSACTION] Processing payment of $75.50...
+  [PAYPAL] Charging $75.50 to PayPal account: user@example.com...
+  [PAYPAL] Payment processed via PayPal gateway.
+[TRANSACTION] SUCCESS — $75.50 processed.
+
+===== ENGINE SHUTDOWN =====
+
+
+FULL CODE (also in FinTechRouter.java)
+----------------------------------------
+
+interface PaymentStrategy {
+    boolean processPayment(double amount);
+}
+
+class CreditCardStrategy implements PaymentStrategy {
+    private String cardNumber, cardHolderName;
+
+    public CreditCardStrategy(String cardHolderName, String cardNumber) {
+        this.cardHolderName = cardHolderName;
+        this.cardNumber = cardNumber;
+    }
+
+    @Override
+    public boolean processPayment(double amount) {
+        System.out.printf("  [CREDIT CARD] Charging $%.2f to card ending in %s (Holder: %s)...%n",
+                amount, cardNumber.substring(cardNumber.length() - 4), cardHolderName);
+        System.out.println("  [CREDIT CARD] Transaction approved by payment network.");
+        return true;
+    }
+}
+
+class CryptoStrategy implements PaymentStrategy {
+    private String walletAddress, coinType;
+
+    public CryptoStrategy(String coinType, String walletAddress) {
+        this.coinType = coinType;
+        this.walletAddress = walletAddress;
+    }
+
+    @Override
+    public boolean processPayment(double amount) {
+        System.out.printf("  [CRYPTO] Sending $%.2f worth of %s to wallet %s...%n",
+                amount, coinType, walletAddress);
+        System.out.println("  [CRYPTO] Transaction broadcast to blockchain. Awaiting confirmation.");
+        return true;
+    }
+}
+
+class PayPalStrategy implements PaymentStrategy {
+    private String email;
+
+    public PayPalStrategy(String email) { this.email = email; }
+
+    @Override
+    public boolean processPayment(double amount) {
+        System.out.printf("  [PAYPAL] Charging $%.2f to PayPal account: %s...%n", amount, email);
+        System.out.println("  [PAYPAL] Payment processed via PayPal gateway.");
+        return true;
+    }
+}
+
+class TransactionProcessor {
+    private PaymentStrategy strategy;
+
+    public TransactionProcessor(PaymentStrategy strategy) {
+        this.strategy = strategy;
+    }
+
+    public void setPaymentStrategy(PaymentStrategy strategy) {
+        System.out.println("  [PROCESSOR] Switching payment strategy to: "
+                + strategy.getClass().getSimpleName());
+        this.strategy = strategy;
+    }
+
+    public void executeTransaction(double amount) {
+        System.out.printf("%n[TRANSACTION] Processing payment of $%.2f...%n", amount);
+        boolean success = strategy.processPayment(amount);
+        if (success) {
+            System.out.printf("[TRANSACTION] SUCCESS — $%.2f processed.%n", amount);
+        } else {
+            System.out.printf("[TRANSACTION] FAILED — $%.2f was not processed.%n", amount);
+        }
+    }
+}
+
+public class FinTechRouter {
+    public static void main(String[] args) {
+        System.out.println("===== FINTECH PAYMENT ROUTING ENGINE =====");
+
+        TransactionProcessor processor = new TransactionProcessor(
+                new CreditCardStrategy("Venkatesh Kumar", "4111111111111234"));
+        processor.executeTransaction(299.99);
+
+        processor.setPaymentStrategy(
+                new CryptoStrategy("Bitcoin", "1A2b3C4d5E6f7G8h9I0j"));
+        processor.executeTransaction(1499.00);
+
+        processor.setPaymentStrategy(new PayPalStrategy("user@example.com"));
+        processor.executeTransaction(75.50);
+
+        System.out.println("\n===== ENGINE SHUTDOWN =====");
+    }
+}

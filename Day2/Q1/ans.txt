@@ -1,0 +1,230 @@
+Q1 ANSWER — EcoSmart Home Hub Controller
+=========================================
+Concepts: Abstract Classes, Interfaces, Polymorphism, instanceof, Downcasting
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question is really testing whether you understand the difference between
+two things that look similar but serve very different purposes: abstract classes
+and interfaces.
+
+The short version: an abstract class says "you ARE this thing."
+An interface says "you CAN DO this thing."
+
+A SmartCamera IS a SmartDevice — it has an ID, a name, and runs diagnostics.
+That's the abstract class.
+But a SmartCamera also CAN BE battery-operated. That's the interface.
+The SmartLight is also a SmartDevice, but it's wired into the wall — so it
+doesn't implement BatteryOperated. And that's totally fine.
+
+If you tried to make BatteryOperated another abstract class, you'd hit Java's
+wall immediately: a class can only extend ONE other class. So SmartCamera
+couldn't extend both SmartDevice and BatteryOperated. Interfaces are the only
+clean solution here.
+
+
+WHY ABSTRACT CLASS FOR SmartDevice?
+-------------------------------------
+Because every single device in the system — light, camera, lock — shares the
+same two pieces of identity: a device ID and a device name. If you didn't have
+a common parent class, you'd be copy-pasting those two fields into every class.
+That's messy and hard to maintain.
+
+Making it abstract does two things:
+- It forces every subclass to write its own runDiagnostic() method.
+  (You can't forget — the compiler won't let you.)
+- It prevents someone from doing "new SmartDevice()" which would be pointless.
+  What even is a raw SmartDevice with no behavior?
+
+
+THE POLYMORPHISM MAGIC IN executeNightlyRoutine()
+--------------------------------------------------
+Here's the part that makes experienced developers smile.
+
+The HomeHub receives a SmartDevice[] array. It loops through it and calls
+device.runDiagnostic() on each one. Notice it doesn't check "is this a light?
+is this a camera?" — it just calls the method and trusts Java to figure it out.
+
+That "figuring it out at runtime" is called Dynamic Method Dispatch (or Late
+Binding). The JVM looks at what the object actually IS in memory (a SmartCamera,
+a SmartLock, etc.) and calls the right version of runDiagnostic(). Not the
+SmartDevice version — the actual subclass version.
+
+This is powerful because if you add a SmartThermostat tomorrow, you just write
+the class and throw it in the array. The loop doesn't change at all.
+
+
+THE instanceof TRICK — WHY YOU NEED IT
+----------------------------------------
+Here's where it gets interesting. The array is SmartDevice[], right? So the
+compiler only knows about SmartDevice methods. And SmartDevice has no
+getBatteryLevel() method. If you try to call device.getBatteryLevel(), the
+compiler yells at you immediately.
+
+So you need to ask the JVM at runtime: "hey, does this object actually implement
+BatteryOperated?" That's exactly what instanceof does.
+
+    if (device instanceof BatteryOperated) {
+        BatteryOperated bd = (BatteryOperated) device;
+        int level = bd.getBatteryLevel();
+    }
+
+The instanceof check looks at the actual object sitting in memory. If it really
+is a BatteryOperated device, you're safe to cast it and call those methods.
+If you skipped the check and just cast blindly, you'd get a ClassCastException
+when it hits a SmartLight. The check is what makes it safe.
+
+Also note: battery < 20 (strictly less than), not <= 20. The problem says
+"strictly less than 20%" — always read edge cases carefully in interviews.
+
+
+CLASS STRUCTURE AT A GLANCE
+-----------------------------
+
+  SmartDevice (abstract)          BatteryOperated (interface)
+  ─────────────────────           ──────────────────────────
+  # deviceId                      + getBatteryLevel()
+  # deviceName                    + triggerRechargeAlert()
+  + runDiagnostic()  <abstract>
+        |
+        +──────────────────────────────────
+        |              |                  |
+   SmartLight     SmartCamera        SmartLock
+   (no battery)   (+ BatteryOp.)    (+ BatteryOp.)
+
+  HomeHub
+  + executeNightlyRoutine(SmartDevice[])
+
+
+SAMPLE OUTPUT
+--------------
+===== HOME HUB: NIGHTLY DIAGNOSTICS [2:00 AM] =====
+
+[DIAGNOSTIC] SmartLight 'Living Room Light' (ID: LT-001) -> Toggling ON/OFF. Status: OK
+
+[DIAGNOSTIC] SmartCamera 'Front Door Camera' (ID: CAM-001) -> Capturing test frame. Status: OK
+  [BATTERY CHECK] Front Door Camera battery level: 15%
+  *** RECHARGE ALERT *** SmartCamera 'Front Door Camera' battery critically low: 15%
+
+[DIAGNOSTIC] SmartCamera 'Backyard Camera' (ID: CAM-002) -> Capturing test frame. Status: OK
+  [BATTERY CHECK] Backyard Camera battery level: 72%
+
+[DIAGNOSTIC] SmartLock 'Main Gate Lock' (ID: LK-001) -> Testing lock/unlock cycle. Status: OK
+  [BATTERY CHECK] Main Gate Lock battery level: 8%
+  *** RECHARGE ALERT *** SmartLock 'Main Gate Lock' battery critically low: 8%
+
+[DIAGNOSTIC] SmartLock 'Garage Lock' (ID: LK-002) -> Testing lock/unlock cycle. Status: OK
+  [BATTERY CHECK] Garage Lock battery level: 55%
+
+===== ROUTINE COMPLETE =====
+
+
+FULL CODE (also in EcoSmartHub.java)
+--------------------------------------
+
+abstract class SmartDevice {
+    protected String deviceId;
+    protected String deviceName;
+
+    public SmartDevice(String deviceId, String deviceName) {
+        this.deviceId = deviceId;
+        this.deviceName = deviceName;
+    }
+
+    public abstract void runDiagnostic();
+}
+
+interface BatteryOperated {
+    int getBatteryLevel();
+    void triggerRechargeAlert();
+}
+
+class SmartLight extends SmartDevice {
+    public SmartLight(String deviceId, String deviceName) {
+        super(deviceId, deviceName);
+    }
+
+    @Override
+    public void runDiagnostic() {
+        System.out.println("[DIAGNOSTIC] SmartLight '" + deviceName
+                + "' (ID: " + deviceId + ") -> Toggling ON/OFF. Status: OK");
+    }
+}
+
+class SmartCamera extends SmartDevice implements BatteryOperated {
+    private int batteryLevel;
+
+    public SmartCamera(String deviceId, String deviceName, int batteryLevel) {
+        super(deviceId, deviceName);
+        this.batteryLevel = batteryLevel;
+    }
+
+    @Override
+    public void runDiagnostic() {
+        System.out.println("[DIAGNOSTIC] SmartCamera '" + deviceName
+                + "' (ID: " + deviceId + ") -> Capturing test frame. Status: OK");
+    }
+
+    @Override public int getBatteryLevel() { return batteryLevel; }
+
+    @Override
+    public void triggerRechargeAlert() {
+        System.out.println("  *** RECHARGE ALERT *** SmartCamera '" + deviceName
+                + "' battery critically low: " + batteryLevel + "%");
+    }
+}
+
+class SmartLock extends SmartDevice implements BatteryOperated {
+    private int batteryLevel;
+
+    public SmartLock(String deviceId, String deviceName, int batteryLevel) {
+        super(deviceId, deviceName);
+        this.batteryLevel = batteryLevel;
+    }
+
+    @Override
+    public void runDiagnostic() {
+        System.out.println("[DIAGNOSTIC] SmartLock '" + deviceName
+                + "' (ID: " + deviceId + ") -> Testing lock/unlock cycle. Status: OK");
+    }
+
+    @Override public int getBatteryLevel() { return batteryLevel; }
+
+    @Override
+    public void triggerRechargeAlert() {
+        System.out.println("  *** RECHARGE ALERT *** SmartLock '" + deviceName
+                + "' battery critically low: " + batteryLevel + "%");
+    }
+}
+
+class HomeHub {
+    public void executeNightlyRoutine(SmartDevice[] devices) {
+        System.out.println("\n===== HOME HUB: NIGHTLY DIAGNOSTICS [2:00 AM] =====\n");
+        for (SmartDevice device : devices) {
+            device.runDiagnostic();
+            if (device instanceof BatteryOperated) {
+                BatteryOperated bd = (BatteryOperated) device;
+                int level = bd.getBatteryLevel();
+                System.out.println("  [BATTERY CHECK] " + device.deviceName
+                        + " battery level: " + level + "%");
+                if (level < 20) bd.triggerRechargeAlert();
+            }
+            System.out.println();
+        }
+        System.out.println("===== ROUTINE COMPLETE =====");
+    }
+}
+
+public class EcoSmartHub {
+    public static void main(String[] args) {
+        SmartDevice[] devices = {
+            new SmartLight("LT-001", "Living Room Light"),
+            new SmartCamera("CAM-001", "Front Door Camera", 15),
+            new SmartCamera("CAM-002", "Backyard Camera", 72),
+            new SmartLock("LK-001", "Main Gate Lock", 8),
+            new SmartLock("LK-002", "Garage Lock", 55)
+        };
+        new HomeHub().executeNightlyRoutine(devices);
+    }
+}
