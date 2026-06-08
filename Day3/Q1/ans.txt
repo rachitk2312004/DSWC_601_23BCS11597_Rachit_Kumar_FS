@@ -1,0 +1,135 @@
+Day3 Q1 ANSWER — Global Airline Passenger Manifest
+====================================================
+Concepts: equals() & hashCode() Contract, Set, List, Map,
+          Algorithmic Collection Choice, O(1) Lookups
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question is really testing two things at once.
+
+First: can you correctly override equals() and hashCode()? Most developers
+know they SHOULD override them — but the real trap here is the constraint
+that fullName must be EXCLUDED. If you just auto-generate equals/hashCode
+from all three fields, the system breaks the moment a passenger changes their
+name. They'd hash to a different bucket and become permanently unfindable.
+
+Second: do you actually understand WHY you'd pick a Set vs a List vs a Map?
+Not "I know what they are" — but "I know which one solves THIS specific problem."
+Each data structure here is chosen for a concrete algorithmic reason, not
+just because it felt right.
+
+
+THE equals() AND hashCode() CONTRACT
+---------------------------------------
+Java's HashMap and HashSet work in two steps when looking something up:
+
+Step 1: Compute hashCode() to find the right bucket.
+Step 2: Use equals() to confirm the match inside that bucket.
+
+This means both methods must agree on what "same object" means.
+The rule is: if equals() says two objects are equal, their hashCode()
+MUST return the same value. Always.
+
+Here, two passengers are the same person if passportNumber AND nationality match.
+So those are the only two fields we use in both methods.
+
+fullName is left out entirely. This is critical because:
+- A passenger named "Alice Johnson" gets married → becomes "Alice Williams"
+- If fullName was in hashCode(), she'd now hash to a completely different bucket
+- The map would return null for her. She'd be "lost" in the system.
+- The original entry would sit in memory forever — an unreachable zombie object.
+
+The fix is simple: only hash on immutable identity fields. Passport + nationality.
+
+
+WHY EACH COLLECTION WAS CHOSEN
+---------------------------------
+No-Fly List → HashSet<Passenger>
+  We only need to answer one question: "is this passenger on the list?"
+  A HashSet answers that in O(1) average time. It hashes the passenger,
+  goes straight to that bucket, checks equals(). Done.
+  A List would require scanning every entry until it finds a match — O(N).
+  When you're checking thousands of passengers at gates simultaneously,
+  O(N) is unacceptable.
+
+Flight Roster → List<Passenger> (one per flight)
+  The scenario explicitly says we need chronological order. Who checked in first?
+  A List preserves insertion order naturally. Element at index 0 was first.
+  A Set gives no ordering guarantees. A Map doesn't make sense here —
+  there's no key/value relationship, just an ordered sequence of passengers.
+
+Global Directory → HashMap<Passenger, String>
+  We need to go from "here's a Passenger" to "here's their flight number" instantly.
+  That's exactly what a Map does. Hash the passenger key, get the value. O(1).
+  Without this map, finding a passenger's flight would mean looping through every
+  flight roster and scanning every name — O(flights × passengers). Not viable
+  at a global scale with tens of thousands of passengers.
+
+
+THE IDENTITY TEST — WHY IT MATTERS
+-------------------------------------
+At the bottom of main(), we create a BRAND NEW Passenger object:
+  new Passenger("P1001", "Alice Johnson-Williams", "US")
+
+This is a completely different object in memory from the original `alice` variable.
+It's not the same reference. Default Object.hashCode() uses memory address —
+so with the default implementation, this lookup would return null.
+
+But because we overrode hashCode() to use passportNumber + nationality,
+this new object hashes to the exact same bucket as the original alice.
+And because equals() also compares only those two fields, it confirms the match.
+The map returns "SK-101" correctly.
+
+This is the whole point of overriding equals() and hashCode() properly.
+It makes your objects behave as value-based keys, not identity-based ones.
+
+
+CLASS STRUCTURE AT A GLANCE
+-----------------------------
+
+  Passenger
+  ─────────────────────────────────────────────
+  - passportNumber: String   ← used in equals() and hashCode()
+  - fullName: String         ← deliberately EXCLUDED from both
+  - nationality: String      ← used in equals() and hashCode()
+  + equals()  → compares passportNumber + nationality only
+  + hashCode() → hashes passportNumber + nationality only
+
+  ManifestManager
+  ─────────────────────────────────────────────
+  - globalNoFlyList: HashSet<Passenger>         → O(1) existence check
+  - flightRosters: HashMap<String, List<Passenger>> → ordered check-in per flight
+  - globalPassengerDirectory: HashMap<Passenger,String> → O(1) flight lookup
+  + addToNoFlyList(p)
+  + processCheckIn(flightNumber, p) → returns true/false
+  + locatePassengerFlight(p) → returns flight number or null
+
+
+SAMPLE OUTPUT
+--------------
+===== NO-FLY LIST SETUP =====
+[NO-FLY] Charlie Xu [P1003/CN] added to restricted list.
+
+===== CHECK-IN PROCESS =====
+[CHECKED IN] Alice Johnson [P1001/US] → Flight SK-101
+[CHECKED IN] Bob Smith [P1002/UK] → Flight SK-101
+[CHECKED IN] Dan Patel [P1004/IN] → Flight SK-202
+[REJECTED] Charlie Xu [P1003/CN] is on the No-Fly List. Check-in denied.
+
+===== FLIGHT ROSTERS =====
+--- Roster for Flight SK-101 ---
+  1. Alice Johnson [P1001/US]
+  2. Bob Smith [P1002/UK]
+
+--- Roster for Flight SK-202 ---
+  1. Dan Patel [P1004/IN]
+
+===== GLOBAL PASSENGER LOOKUP =====
+Alice's flight:   SK-101
+Bob's flight:     SK-101
+Dan's flight:     SK-202
+Charlie's flight: null
+
+===== IDENTITY TEST (New Object, Same Passport) =====
+Lookup with new object (name changed): SK-101

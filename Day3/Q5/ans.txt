@@ -1,0 +1,131 @@
+Day3 Q5 ANSWER — Global E-Commerce Sales Analyzer
+===================================================
+Concepts: Java 8 Stream API, filter(), mapToDouble(), sum(),
+          Declarative vs Imperative, parallelStream()
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question tests whether you've moved past imperative Java and into
+the functional/declarative style that Java 8+ encourages.
+
+The old way (imperative):
+  double total = 0;
+  for (Transaction t : transactions) {
+      if (t.getStatus().equals("COMPLETED")) {
+          if (t.getCategory().equals("ELECTRONICS")) {
+              total += t.getAmount();
+          }
+      }
+  }
+
+The new way (declarative):
+  double total = transactions.stream()
+      .filter(t -> "COMPLETED".equals(t.getStatus()))
+      .filter(t -> "ELECTRONICS".equals(t.getCategory()))
+      .mapToDouble(Transaction::getAmount)
+      .sum();
+
+Both produce the same result. The stream version:
+  - Has no mutable state (no `total` variable being modified)
+  - Reads like a description of what you want, not how to get it
+  - Can be parallelized with one word change
+  - Is shorter and has less indentation
+
+
+THE STREAM PIPELINE, STEP BY STEP
+------------------------------------
+transactions.stream()
+  Creates a Stream<Transaction> — a sequence of elements that can have
+  operations applied to them lazily. Nothing executes yet. The stream is
+  just describing what will happen.
+
+.filter(t -> "COMPLETED".equals(t.getStatus()))
+  Passes through only transactions where status equals "COMPLETED".
+  Everything else is discarded without any processing downstream.
+  This is a lazy intermediate operation.
+
+.filter(t -> "ELECTRONICS".equals(t.getCategory()))
+  Further narrows the stream to ELECTRONICS transactions only.
+  We write "COMPLETED".equals(t.get...) instead of t.get...equals("COMPLETED")
+  as a defensive habit — if getStatus() returned null, the second form throws
+  a NullPointerException. The first form safely returns false.
+
+.mapToDouble(Transaction::getAmount)
+  Transforms each remaining Transaction into its amount as a primitive double.
+  This changes the type from Stream<Transaction> to DoubleStream.
+  Using DoubleStream (primitive) instead of Stream<Double> (boxed) avoids
+  creating Double objects for every element — more memory efficient at scale.
+  Transaction::getAmount is method reference syntax — equivalent to t -> t.getAmount().
+
+.sum()
+  Terminal operation. Consumes the stream and adds up all the doubles.
+  Returns one double. The pipeline executes here — everything above was lazy.
+
+
+LAZY EVALUATION — WHY IT MATTERS
+-----------------------------------
+Intermediate operations (filter, map) don't execute when you call them.
+They build up a pipeline description. Only when a terminal operation
+(sum, collect, forEach) is called does the data actually flow through.
+
+This means for 1 million transactions, each element only passes through
+the pipeline once — filter 1, filter 2, mapToDouble, sum. One pass.
+There's no intermediate list being built between each step.
+
+
+THE PARALLEL VERSION
+---------------------
+  transactions.parallelStream()
+      .filter(...)
+      .filter(...)
+      .mapToDouble(...)
+      .sum()
+
+Change .stream() to .parallelStream() and Java's ForkJoinPool splits the
+list across all available CPU cores. Each core processes a chunk,
+and the results are combined (summed) at the end.
+
+This is thread-safe here because sum() is an associative operation —
+it doesn't matter what order you add the numbers. The final result is
+always the same.
+
+Try parallelizing the imperative for-loop version: you'd need to either
+synchronize access to the mutable `total` variable (slow) or use AtomicDouble
+(verbose and still not trivial). The stream version handles this for free.
+
+
+THE NUMBERS
+------------
+Transactions that count (COMPLETED + ELECTRONICS):
+  TXN-001: $1200.00
+  TXN-004: $2500.00
+  TXN-007: $3100.00
+  TXN-008: $750.00
+  TXN-010: $1850.00
+  ─────────────────
+  Total:   $9400.00
+
+Filtered out:
+  TXN-002: COMPLETED but CLOTHING — wrong category
+  TXN-003: ELECTRONICS but PENDING — wrong status
+  TXN-005: ELECTRONICS but REFUNDED — wrong status
+  TXN-006: COMPLETED but BOOKS — wrong category
+  TXN-009: PENDING and CLOTHING — both wrong
+
+
+SAMPLE OUTPUT
+--------------
+===== ECOMMERCE SALES ANALYZER =====
+
+Total transactions in batch: 10
+
+Completed Electronics Revenue (sequential): $9400.00
+Completed Electronics Revenue (parallel):   $9400.00
+
+--- Revenue by Category (COMPLETED only) ---
+  BOOKS           $45.00
+  CLOTHING        $350.00
+  ELECTRONICS     $9400.00
+
+===== REPORT COMPLETE =====

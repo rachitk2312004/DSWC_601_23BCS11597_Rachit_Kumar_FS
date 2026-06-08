@@ -1,0 +1,109 @@
+Day3 Q4 ANSWER — StreamFlix LRU Memory Cache
+==============================================
+Concepts: LinkedHashMap, Access Order vs Insertion Order,
+          removeEldestEntry(), LRU Eviction, Inheritance
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+LRU (Least Recently Used) caching is a classic interview topic. The brute-force
+way to implement it is: a HashMap for O(1) lookups + a custom Doubly-Linked List
+to track access order + manually rewiring node pointers on every access.
+That's maybe 80 lines of pointer manipulation and the kind of thing that leads
+to bugs in production.
+
+Java's LinkedHashMap already has a doubly-linked list internally for maintaining
+order, plus a flag to switch it from insertion order to access order, plus a
+protected hook (removeEldestEntry) specifically designed for eviction logic.
+
+Knowing this exists — and using it — is what separates someone who's familiar
+with the JDK from someone who reinvents the wheel every time.
+
+
+THE KEY CONSTRUCTOR ARGUMENT: accessOrder = true
+--------------------------------------------------
+This is the one line the whole question hinges on.
+
+  super(capacity + 1, 0.75f, true)
+                              ^^^^
+
+By default, LinkedHashMap maintains insertion order — items appear in the order
+you first put() them, regardless of how many times you access them later.
+
+Setting this third argument to true switches to access order. Now, every time
+an item is accessed via get() or put(), it gets physically moved to the TAIL
+of the internal doubly-linked list. The item that hasn't been touched in the
+longest time is always at the HEAD.
+
+The HEAD = Least Recently Used = the one to evict when space runs out.
+
+
+HOW removeEldestEntry() WORKS
+--------------------------------
+LinkedHashMap calls this protected method internally after EVERY put().
+It passes in the current HEAD entry (the eldest/LRU item) and asks:
+"should I remove this?"
+
+Our implementation returns true when size() > capacity.
+LinkedHashMap then removes that HEAD entry immediately.
+
+We never manually manage eviction. We never track which item is oldest.
+The linked list does all of that. We just declare the rule: evict when full.
+That's all removeEldestEntry() needs to be.
+
+
+WHAT HAPPENS IN MEMORY STEP BY STEP
+--------------------------------------
+After loading 5 movies (capacity = 5):
+  [Inception] → [Matrix] → [Interstellar] → [Dark Knight] → [Parasite]
+   HEAD (LRU)                                                TAIL (MRU)
+
+After accessing "Inception":
+  "Inception" node is unlinked from HEAD and relinked to TAIL.
+  [Matrix] → [Interstellar] → [Dark Knight] → [Parasite] → [Inception]
+   HEAD (LRU)                                               TAIL (MRU)
+
+After adding "Oppenheimer" (6th item, triggers eviction):
+  LinkedHashMap calls removeEldestEntry → size() is 6 > 5 → return true
+  The HEAD node ("Matrix") is evicted.
+  "Oppenheimer" is added at the TAIL.
+  [Interstellar] → [Dark Knight] → [Parasite] → [Inception] → [Oppenheimer]
+
+"Inception" survived eviction because we accessed it. "Matrix" didn't,
+even though it was added at the same time as Inception. That's LRU at work.
+
+
+WHY EXTEND LinkedHashMap INSTEAD OF COMPOSING IT?
+---------------------------------------------------
+Because removeEldestEntry() is a protected method. You can only override it
+from a subclass. Composition (holding a LinkedHashMap as a field) wouldn't
+give you access to it.
+
+Also, VideoCache IS an LRU cache — it's not just using one internally.
+The "is-a" relationship here justifies inheritance.
+
+
+SAMPLE OUTPUT
+--------------
+===== STREAMFLIX VIDEO CACHE (capacity: 5) =====
+
+--- Loading 5 movies into cache ---
+After loading: [Inception, The Matrix, Interstellar, The Dark Knight, Parasite]
+
+--- Accessing 'Inception' ---
+  [CACHE HIT] "Inception" accessed → moved to front of keep list
+After accessing Inception: [The Matrix, Interstellar, The Dark Knight, Parasite, Inception]
+
+--- Adding 6th movie: 'Oppenheimer' ---
+  [EVICT] Cache full — evicting LRU entry: "The Matrix"
+After adding Oppenheimer: [Interstellar, The Dark Knight, Parasite, Inception, Oppenheimer]
+
+--- Verifying eviction ---
+  'The Matrix' in cache? false
+  'Inception' in cache?  true
+  Cache size: 5
+
+--- Adding 2 more movies ---
+  [EVICT] Cache full — evicting LRU entry: "Interstellar"
+  [EVICT] Cache full — evicting LRU entry: "The Dark Knight"
+Final cache state: [Parasite, Inception, Oppenheimer, Tenet, Dunkirk]

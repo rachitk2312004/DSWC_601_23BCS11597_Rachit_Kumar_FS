@@ -1,0 +1,115 @@
+Day3 Q3 ANSWER — TradeX Order Matching Engine
+===============================================
+Concepts: ConcurrentHashMap, CopyOnWriteArrayList, computeIfAbsent(),
+          Race Conditions, Thread Safety, Lock Striping
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question is about understanding why thread safety matters and HOW
+to achieve it without naively locking everything.
+
+The beginner fix to concurrency problems is: put synchronized on the method.
+That works, but it creates a single global lock on the entire exchange.
+Someone placing a BTC order and someone placing an ETH order now block each other.
+At a real exchange processing thousands of orders per second, this kills throughput.
+
+The senior approach is to use data structures that are designed for concurrency —
+ones that use fine-grained locking (ConcurrentHashMap) or lock-free reads
+(CopyOnWriteArrayList). They're safer AND faster than a synchronized block.
+
+
+THE "CHECK-THEN-ACT" RACE CONDITION
+--------------------------------------
+This is the most common cause of silent data loss in multithreaded Java.
+
+The buggy code:
+  if (!orderBook.containsKey(ticker)) {
+      orderBook.put(ticker, new ArrayList<>());
+  }
+  orderBook.get(ticker).add(order);
+
+Here's the race:
+  Thread A: checks containsKey("BTC") → false
+  Thread B: checks containsKey("BTC") → false  (before A has put anything)
+  Thread A: puts a new ArrayList for "BTC"
+  Thread B: puts a NEW ArrayList for "BTC" → overwrites Thread A's list
+  Thread A's orders are gone. Silently. No exception. Just lost.
+
+computeIfAbsent() fixes this because it's atomic — the check and the insert
+happen as a single uninterruptible operation inside ConcurrentHashMap.
+No thread can squeeze in between them.
+
+
+WHY ConcurrentHashMap BEATS synchronized HashMap
+--------------------------------------------------
+synchronized HashMap locks the ENTIRE map for every operation.
+Thread buying BTC → lock. Thread buying ETH → has to wait for BTC to finish.
+
+ConcurrentHashMap uses lock-striping: the map is divided into segments
+(16 by default). Each segment has its own independent lock. Two threads
+writing to different segments can proceed simultaneously. For an exchange
+with dozens of tickers, this means much higher concurrency — BTC and ETH
+threads genuinely run in parallel.
+
+
+WHY CopyOnWriteArrayList BEATS synchronized ArrayList
+--------------------------------------------------------
+A regular ArrayList throws ConcurrentModificationException if you read
+it (iterate) while another thread writes to it. The iterator tracks a
+modCount and panics if it changes mid-iteration.
+
+CopyOnWriteArrayList handles concurrent writes differently: every write
+(add, remove) creates a BRAND NEW copy of the underlying array. Readers
+always see a consistent snapshot — they're reading from the old copy.
+New writes go to the new copy. Zero locking for readers.
+
+The cost: writes are expensive (copying the whole array). But for an
+order book where you read far more than you write, this is fine.
+In extremely write-heavy scenarios, a synchronized list would be better.
+
+
+THE TWO-CLASS SOLUTION
+------------------------
+  ConcurrentHashMap<String, List<Order>>
+    ↑ thread-safe map of ticker → order list
+    ↑ computeIfAbsent() for atomic key initialization
+
+  CopyOnWriteArrayList<Order>
+    ↑ thread-safe list of orders per ticker
+    ↑ readers never block, writers copy the array
+
+Together these let multiple threads write to different tickers in parallel,
+and multiple threads read any ticker's order book without blocking writers.
+
+
+SAMPLE OUTPUT
+--------------
+===== TRADEX CONCURRENT ORDER PLACEMENT =====
+
+[ORDER PLACED] [ORD-001] BUY BTC @ $45000.0
+[ORDER PLACED] [ORD-003] BUY ETH @ $2800.0
+[ORDER PLACED] [ORD-002] SELL BTC @ $44950.0
+[ORDER PLACED] [ORD-004] BUY BTC @ $45100.0
+[ORDER PLACED] [ORD-005] SELL ETH @ $2795.0
+[ORDER PLACED] [ORD-006] BUY BTC @ $45050.0
+
+===== FINAL ORDER BOOKS =====
+
+--- Order Book: BTC (4 orders) ---
+  [ORD-001] BUY BTC @ $45000.0
+  [ORD-002] SELL BTC @ $44950.0
+  [ORD-004] BUY BTC @ $45100.0
+  [ORD-006] BUY BTC @ $45050.0
+
+--- Order Book: ETH (2 orders) ---
+  [ORD-003] BUY ETH @ $2800.0
+  [ORD-005] SELL ETH @ $2795.0
+
+===== ORDER COUNT =====
+BTC orders: 4
+ETH orders: 2
+
+All orders accounted for — no race condition data loss.
+
+(Note: thread execution order may vary, but the final count will always be correct.)

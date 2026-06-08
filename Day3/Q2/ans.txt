@@ -1,0 +1,115 @@
+Day3 Q2 ANSWER — MediCore Emergency Triage System
+===================================================
+Concepts: Comparable<T>, PriorityQueue, Multi-Tier Sorting,
+          Binary Heap, O(log N) Insertion
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+Two things are being tested here.
+
+First: can you write clean multi-field sorting logic? Most people get messy
+with deeply nested if/else blocks when sorting by multiple criteria.
+The clean approach is: compare the primary field first, return immediately
+if they differ, only fall through to the secondary field if needed.
+Long.compare() and enum.compareTo() make both comparisons a single line each.
+
+Second: do you understand WHY a PriorityQueue is better than a sorted List
+for a system that receives continuous input?
+
+
+WHY IMPLEMENT Comparable AND NOT JUST USE A Comparator?
+---------------------------------------------------------
+Both work, but Comparable makes more sense here because this priority ordering
+IS the natural ordering of patients in a triage context. There's no alternate
+interpretation — a CRITICAL patient always goes before a STABLE one. Period.
+
+Comparable says "this is how I naturally compare to other objects of my type."
+Comparator says "here's a custom, one-off way to order these objects."
+
+When the ordering is inherent to the domain model, Comparable is the right call.
+
+
+THE TWO-TIER SORT EXPLAINED
+-----------------------------
+We need two rules:
+  Rule 1 — severity: CRITICAL before URGENT before STABLE.
+  Rule 2 — if tied on severity, whoever arrived first goes first.
+
+Enums have ordinals: CRITICAL=0, URGENT=1, STABLE=2.
+The PriorityQueue is a min-heap — smallest value has highest priority.
+So lower ordinal = higher priority. That's exactly what we want.
+
+  this.severity.compareTo(other.severity)
+
+This is just comparing ordinals. If this patient is CRITICAL (0) and the
+other is STABLE (2), we get 0 - 2 = negative. Negative means "this first."
+
+If they have the same severity, compareTo returns 0 and we fall through to:
+
+  Long.compare(this.arrivalTime, other.arrivalTime)
+
+Earlier arrival = smaller timestamp = negative result = "this first."
+Again exactly what we want.
+
+The whole compareTo() method ends up being about 4 lines. No nested ifs.
+
+
+WHY PRIORITYQUEUE BEATS A SORTED LIST HERE
+--------------------------------------------
+Imagine patients keep arriving all day — hundreds per hour.
+
+With a sorted List:
+  Every time a new patient arrives, you'd call Collections.sort() again.
+  That's O(N log N) per admission. As N grows, this gets very slow.
+
+With a PriorityQueue (binary min-heap):
+  Inserting a new patient takes O(log N). The heap just bubbles the new
+  patient up until it finds the right spot. That's at most log(N) comparisons.
+  Getting the next patient to treat is O(log N) for poll() (re-heapify after removal).
+  Peeking at who's next (without removing) is O(1) — it's always the root node.
+
+For a live intake system where patients arrive continuously, O(log N) per
+insertion is far more sustainable than O(N log N) per sort.
+
+
+HOW THE HEAP ORDERS OUR PATIENTS
+----------------------------------
+After admitting: Alice(STABLE/100), Bob(CRITICAL/200), Carol(URGENT/150),
+                 Dan(CRITICAL/120), Eve(URGENT/300), Frank(STABLE/80)
+
+The min-heap root is always the "smallest" per our compareTo():
+  Root → Dan (CRITICAL, earliest CRITICAL arrival)
+
+When Dan is polled and removed:
+  Root → Bob (CRITICAL, next earliest CRITICAL)
+
+When Bob is polled:
+  Root → Carol (URGENT, earliest URGENT arrival)
+
+...and so on. The heap re-balances after each removal in O(log N).
+
+
+SAMPLE OUTPUT
+--------------
+===== MASS CASUALTY INTAKE =====
+
+[ADMITTED] Alice [STABLE, arrived at T+100ms]
+[ADMITTED] Bob [CRITICAL, arrived at T+200ms]
+[ADMITTED] Carol [URGENT, arrived at T+150ms]
+[ADMITTED] Dan [CRITICAL, arrived at T+120ms]
+[ADMITTED] Eve [URGENT, arrived at T+300ms]
+[ADMITTED] Frank [STABLE, arrived at T+80ms]
+
+===== TREATMENT ORDER =====
+
+[TREATING] Dan [CRITICAL, arrived at T+120ms]
+[TREATING] Bob [CRITICAL, arrived at T+200ms]
+[TREATING] Carol [URGENT, arrived at T+150ms]
+[TREATING] Eve [URGENT, arrived at T+300ms]
+[TREATING] Frank [STABLE, arrived at T+80ms]
+[TREATING] Alice [STABLE, arrived at T+100ms]
+
+Notice: Frank (STABLE, T+80) arrived before Alice (STABLE, T+100) AND before
+most other patients. But he still waits behind all CRITICAL and URGENT patients.
+Severity wins Tier 1. Arrival time only breaks ties within the same severity.
