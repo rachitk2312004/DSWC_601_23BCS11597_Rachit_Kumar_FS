@@ -1,0 +1,89 @@
+Day4 Q6 ANSWER — E-Commerce Nested Payload Parser
+===================================================
+Concepts: flatMap(), Objects::nonNull, Null-Safe String Comparison,
+          mapToDouble(), Method References
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question has two independent traps that work together to sink developers:
+
+Trap 1: Forgetting that .map(order -> order.getItems().stream()) produces a
+Stream<Stream<Item>>, not a Stream<Item>. You need flatMap to collapse the
+inner streams into one flat sequence.
+
+Trap 2: Null inputs at multiple levels. The list of orders might have null
+entries. Each order's item list might have null item references. Each item's
+category might be null. If you don't guard against all three, you get a
+NullPointerException somewhere in the pipeline that crashes the whole service.
+
+
+THE flatMap MENTAL MODEL
+--------------------------
+Think of it this way:
+
+  Without flatMap:   [[item1, item2], [item3], [item4, item5]]   ← Stream<List<Item>>
+  With flatMap:       [item1, item2, item3, item4, item5]         ← Stream<Item>
+
+map(order -> order.getItems().stream()) would give you a stream where each
+element is itself a stream — a Stream of Streams. You can't filter individual
+items if they're still wrapped in their own streams.
+
+flatMap says: "produce a stream for each element, then merge all those streams."
+The result is always one flat, continuous stream of the inner elements.
+
+
+THE NULL SAFETY CHAIN
+-----------------------
+Layer 1 — null Orders in the list:
+  .filter(Objects::nonNull)
+  Without this, calling order.getItems() on a null order throws NPE immediately.
+
+Layer 2 — null Items inside order.getItems():
+  .filter(Objects::nonNull)  (second filter, after flatMap)
+  Without this, calling item.getCategory() on a null item throws NPE.
+
+Layer 3 — null item categories:
+  .filter(item -> "ELECTRONICS".equals(item.getCategory()))
+  Writing the literal first is the key. "ELECTRONICS".equals(null) → false (safe).
+  item.getCategory().equals("ELECTRONICS") → NPE when getCategory() returns null.
+
+This null-safety discipline — guarding at every level — is the mark of
+production-quality stream code. One missed guard crashes the service.
+
+
+OBJECTS::nonNull — WHAT IT ACTUALLY IS
+-----------------------------------------
+Objects.nonNull() is a static method that just returns: obj != null
+Objects::nonNull is a method reference to it.
+It's equivalent to writing: .filter(order -> order != null)
+The method reference is cleaner and considered more idiomatic.
+
+
+PIPELINE BREAKDOWN
+-------------------
+  orders.stream()
+    → filter(Objects::nonNull)         removes null Order (1 removed)
+    → flatMap(order -> items stream)   flattens 4 orders into ~12 items
+    → filter(Objects::nonNull)         removes null Item in ORD-003
+    → filter("ELECTRONICS".equals(..)) removes CLOTHING, BOOKS, null category
+    → filter(price > 0)                removes negative-price SmartWatch
+    → mapToDouble(Item::getPrice)      extracts prices as primitives
+    → sum()                            totals: 1200 + 850 + 200 + 650 + 950 = 3850.0
+
+
+SAMPLE OUTPUT
+--------------
+===== E-COMMERCE REVENUE REPORT =====
+
+Total orders in payload: 5
+Electronics Revenue (excl. nulls/corrupted): $3850.00
+
+Breakdown of ELECTRONICS items counted:
+  Laptop     (ORD-001): $1200.00
+  Phone      (ORD-001): $850.00
+  Headphones (ORD-003): $200.00
+  Tablet     (ORD-004): $650.00
+  Camera     (ORD-005): $950.00
+  ─────────────────────────────
+  Total:                $3850.00

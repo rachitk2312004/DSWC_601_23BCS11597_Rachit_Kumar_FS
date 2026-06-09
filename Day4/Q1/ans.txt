@@ -1,0 +1,101 @@
+Day4 Q1 ANSWER — Galactic Cargo Manifest Processor
+====================================================
+Concepts: @FunctionalInterface, Custom Lambdas, Stream Pipeline,
+          instanceof in Lambdas, Open/Closed Principle
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+The question is testing whether you understand that functional interfaces are
+not magic — they're just regular interfaces with exactly one abstract method.
+Java's built-in Predicate<T> and Function<T,R> are functional interfaces too.
+The only difference is they're generic. Creating your own named ones
+(CargoInspector, CargoCompressor) does the exact same thing but with
+domain-specific method names that make the code read like the problem domain.
+
+The deeper point: the processing engine (ManifestProcessor) knows nothing about
+business rules. It receives behavior as parameters. This is the functional
+programming way of achieving the Open/Closed Principle — the engine never
+changes, new rules just get passed in as different lambdas.
+
+
+WHAT @FunctionalInterface ACTUALLY DOES
+-----------------------------------------
+It's a compile-time enforcement annotation. If you accidentally define a second
+abstract method inside the interface, the compiler throws an error immediately.
+It also enables lambda syntax — the compiler needs to know there's exactly one
+method to map the lambda body onto.
+
+Without @FunctionalInterface, you could still write lambdas for a single-method
+interface. The annotation just adds safety and signals intent.
+
+
+THE INSPECTOR LAMBDA — MIXING OOP WITH FUNCTIONAL
+----------------------------------------------------
+This lambda has to check a child-specific field (isShielded) that only exists
+on BiologicalCargo, not on the Cargo base class. So we can't just call
+cargo.isShielded() directly — the compiler doesn't know Cargo has that method.
+
+The solution is the same as traditional OOP: instanceof check + downcast.
+The lambda body does this naturally:
+
+  cargo -> {
+      if (cargo.isHazardous() && cargo instanceof BiologicalCargo) {
+          BiologicalCargo bio = (BiologicalCargo) cargo;
+          return bio.isShielded();
+      }
+      return true;
+  }
+
+This is mixing the old world (polymorphism, casting) with the new world
+(lambdas, functional injection). Both have their place — lambdas don't
+magically replace instanceof. They just wrap it in a cleaner syntax.
+
+
+THE COMPRESSOR LAMBDA — COMPACT TRANSFORMATION
+-------------------------------------------------
+  cargo -> cargo.getContainerId().substring(0, 4) + "-" + (int) cargo.getValueInCredits()
+
+  substring(0, 4) → takes the first 4 characters of the ID string
+  (int) cast      → truncates the double, drops the decimal entirely
+  Result:  "ALPHA-99" with 5000.50  →  "ALPH-5000"
+
+
+THE STREAM PIPELINE ORDER
+--------------------------
+  1. .filter(inspector::inspect)    — safety check first, rejects hazardous unshielded bio cargo
+  2. .filter(value >= 1000.0)       — value check second, rejects cheap cargo
+  3. .map(compressor::compress)     — only transform what survived both filters
+  4. .collect(Collectors.toList())  — terminal op, materializes the stream into a List
+
+Order matters. Filtering before mapping means we never waste time compressing
+cargo that would have been rejected anyway.
+
+
+CARGO FATE TABLE
+-----------------
+  Container     Value     Hazardous  Shielded  Result
+  ─────────────────────────────────────────────────────
+  ALPHA-99      5000.50   false      —         ✓ ALPH-5000
+  BETA-12        800.00   false      —         ✗ too cheap
+  GAMMA-55      3200.00   true (std) —         ✓ GAMM-3200  (hazardous but not biological)
+  DELTA-01      7500.00   true       true      ✓ DELT-7500  (shielded = safe)
+  EPSILON-7     4200.00   true       false     ✗ REJECTED  (unshielded bio hazard)
+  ZETA-88       2100.00   false      —         ✓ ZETA-2100
+  ETA-33       12000.00   false      —         ✓ ETA--12000
+  THETA-05       500.00   false      —         ✗ too cheap
+
+
+SAMPLE OUTPUT
+--------------
+===== ANDROMEDA FREIGHT — CARGO TRANSMISSION =====
+
+Containers processed: 8
+Transmission packets: 5
+
+--- Compressed Telemetry ---
+ALPH-5000
+GAMM-3200
+DELT-7500
+ZETA-2100
+ETA--12000

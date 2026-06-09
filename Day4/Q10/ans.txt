@@ -1,0 +1,117 @@
+Day4 Q10 ANSWER — Thread-Safe State Mutation: reduce() vs Race Condition
+=========================================================================
+Concepts: parallelStream(), Race Conditions, Shared Mutable State,
+          reduce(), Pure Functions, Identity Element
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This question proves that parallelStream() is NOT just a faster version of stream().
+It's a different execution model — multiple threads run your lambda simultaneously.
+If your lambda touches shared state (a variable, a counter, a list outside the stream),
+multiple threads will read and write it at the same time. Results become unpredictable.
+
+The fix isn't synchronization (that negates the parallelism benefit).
+The fix is designing the operation to have NO shared state at all.
+reduce() does this — it produces new values from inputs without touching anything external.
+
+
+THE RACE CONDITION, STEP BY STEP
+-----------------------------------
+  badCounter.add(qty) is not atomic. It compiles down to three CPU operations:
+    1. READ:  load total from memory into a CPU register
+    2. ADD:   add qty to the register value
+    3. WRITE: store the result back to memory
+
+  With two threads:
+    Thread A reads total = 50
+    Thread B reads total = 50     ← reads BEFORE Thread A writes back
+    Thread A adds 10 → writes 60
+    Thread B adds 5  → writes 55  ← OVERWRITES Thread A's result. Thread A's +10 is gone.
+
+  Total should be 65. Actual result: 55. And this happens silently, no exception.
+  Every run produces a different result depending on CPU scheduling timing.
+
+
+WHY reduce() FIXES THIS
+--------------------------
+reduce(0, (acc, curr) -> acc + curr) is pure:
+  - It takes two VALUES as input
+  - It returns a new VALUE
+  - It modifies NOTHING external
+  - The same inputs always produce the same output (deterministic)
+
+The JVM can safely split the list across threads because each thread works on
+its own chunk independently, then the partial results are combined. No thread
+ever reads a value that another thread is currently writing. No shared state exists.
+
+  Thread A gets [10, 25, 15] → reduces to 50
+  Thread B gets [40, 30, 5]  → reduces to 75
+  JVM combines: 50 + 75 = 125  (for that chunk)
+  ...and so on until all chunks are merged.
+
+Each step is deterministic. The order of chunk merging doesn't matter because
+addition is associative (a + b + c = c + a + b). The final result is always correct.
+
+
+THE IDENTITY ELEMENT
+---------------------
+The first argument to reduce() is the identity element — the starting value.
+
+For addition, the identity is 0: 0 + x = x. Adding 0 changes nothing.
+For multiplication, the identity is 1: 1 × x = x. Multiplying by 1 changes nothing.
+For string concatenation, the identity is "": "" + s = s.
+
+The identity is used to initialize each thread's partial reduction.
+It must not change the result when combined with any element.
+If you used 1 as the identity for addition, every chunk's sum would be 1 too large.
+
+
+BROKEN vs CORRECT COMPARISON
+-------------------------------
+  // BROKEN — shared mutable state
+  UnsafeCounter counter = new UnsafeCounter();
+  quantities.parallelStream().forEach(qty -> counter.add(qty));
+  // → different wrong answer every run
+
+  // CORRECT — pure reduction, no shared state
+  quantities.parallelStream().reduce(0, (acc, curr) -> acc + curr)
+  // → always correct, always 479
+
+  // EVEN CLEANER — method reference
+  quantities.parallelStream().reduce(0, Integer::sum)
+  // → same result, more readable
+
+
+SAMPLE OUTPUT
+--------------
+===== INVENTORY COUNTER: RACE CONDITION DEMO =====
+
+Items: 20
+Expected total: 479
+
+--- BROKEN (parallelStream + mutable counter) ---
+Running 5 times. With a race condition, results will vary:
+  Run 1: 469 → WRONG (race condition)
+  Run 2: 479 → correct (got lucky)
+  Run 3: 454 → WRONG (race condition)
+  Run 4: 471 → WRONG (race condition)
+  Run 5: 479 → correct (got lucky)
+
+--- CORRECT (parallelStream + reduce) ---
+Running 5 times. reduce() is always consistent:
+  Run 1: 479 → correct ✓
+  Run 2: 479 → correct ✓
+  Run 3: 479 → correct ✓
+  Run 4: 479 → correct ✓
+  Run 5: 479 → correct ✓
+
+--- SEQUENTIAL .stream().reduce() ---
+  Result: 479 (sequential streams are always correct but single-threaded)
+
+--- THE RULE ---
+If you use parallelStream(), NEVER modify shared mutable state.
+Use reduce(), collect(), or other purely functional terminal ops instead.
+
+(Note: the broken version may occasionally produce 479 by luck, but it's
+ non-deterministic. You cannot rely on it. In production it will fail.)

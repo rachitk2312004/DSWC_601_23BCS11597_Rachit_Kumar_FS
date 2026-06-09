@@ -1,0 +1,92 @@
+Day4 Q5 ANSWER — GeneWeaver DNA Sequencer
+==========================================
+Concepts: Collectors.groupingBy(), Collectors.mapping(),
+          Downstream Collectors, Map<String, List<String>> output
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This is the hardest collector combination in the Java Streams API.
+Collectors.groupingBy() alone gives you a Map<Key, List<OriginalType>>.
+But if you want Map<Key, List<TransformedType>>, you need to apply a
+transformation INSIDE the grouping — that's what the downstream collector does.
+
+groupingBy() + mapping() lets you group AND transform simultaneously,
+in a single terminal operation. Without it, you'd need to group first,
+then iterate over the map entries and transform each list separately.
+
+
+groupingBy() ALONE vs groupingBy() + mapping()
+------------------------------------------------
+Without downstream collector:
+  .collect(Collectors.groupingBy(s -> s.getClass().getSimpleName()))
+  → Map<String, List<DNASample>>
+     "HumanSample" → [DNASample, DNASample, ...]
+     "AlienSample"  → [DNASample, DNASample, ...]
+
+  You'd then need another loop to convert each List<DNASample> to List<String>.
+
+With downstream mapping():
+  .collect(Collectors.groupingBy(
+      s -> s.getClass().getSimpleName(),
+      Collectors.mapping(s -> mapper.classify(s), Collectors.toList())
+  ))
+  → Map<String, List<String>>
+     "HumanSample" → ["ID: H-001 (Type: O-)", "ID: H-003 (Type: B+)", ...]
+     "AlienSample"  → ["ID: A-001 (Silicon: true)", ...]
+
+One terminal op. No second pass needed.
+
+
+HOW Collectors.mapping() WORKS
+---------------------------------
+mapping() takes two arguments:
+  1. A Function — what to do to each element (the transformation)
+  2. A downstream collector — what to do with the transformed elements
+
+  Collectors.mapping(
+      sample -> mapper.classify(sample),  ← transform DNASample to String
+      Collectors.toList()                  ← collect those Strings into a List
+  )
+
+The result is a "collector of collectors" — groupingBy decides the bucket,
+mapping transforms the element before putting it in the bucket.
+
+
+SAMPLE FATE TABLE
+------------------
+  ID      Purity  Type         Viable?   Output String
+  ───────────────────────────────────────────────────────────────
+  H-001   95.0    HumanSample  ✓         "ID: H-001 (Type: O-)"
+  H-002   72.0    HumanSample  ✗ < 80.0
+  H-003   88.5    HumanSample  ✓         "ID: H-003 (Type: B+)"
+  A-001   91.0    AlienSample  ✓         "ID: A-001 (Silicon: true)"
+  A-002   65.0    AlienSample  ✗ < 80.0
+  A-003   82.0    AlienSample  ✓         "ID: A-003 (Silicon: true)"
+  H-004   80.0    HumanSample  ✓ = 80.0  "ID: H-004 (Type: AB-)"
+  A-004   79.9    AlienSample  ✗ < 80.0
+  H-005   99.0    HumanSample  ✓         "ID: H-005 (Type: O+)"
+
+Final map:
+  "HumanSample" → [H-001, H-003, H-004, H-005]  (4 entries)
+  "AlienSample"  → [A-001, A-003]               (2 entries)
+
+
+SAMPLE OUTPUT
+--------------
+===== GENEWEAVER GENOME CLASSIFICATION REPORT =====
+
+Total samples submitted: 9
+Viable samples grouped: 6
+
+--- Classification by Species ---
+
+HumanSample (4 samples):
+  ID: H-001 (Type: O-)
+  ID: H-003 (Type: B+)
+  ID: H-004 (Type: AB-)
+  ID: H-005 (Type: O+)
+
+AlienSample (2 samples):
+  ID: A-001 (Silicon: true)
+  ID: A-003 (Silicon: true)

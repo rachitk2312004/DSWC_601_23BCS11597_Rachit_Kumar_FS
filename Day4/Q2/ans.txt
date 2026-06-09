@@ -1,0 +1,84 @@
+Day4 Q2 ANSWER — NeuroLink Memory Engram Sorter
+=================================================
+Concepts: @FunctionalInterface, Lambda with OR Logic, instanceof in Lambdas,
+          Stream Pipeline, Open/Closed Principle
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+This is structurally the same pattern as Q1 — custom functional interfaces
+injected into a stream pipeline. The key differences are:
+
+1. The validator uses OR logic, not AND.
+   In Q1: unsafe if hazardous AND biological AND unshielded (all three).
+   Here:  unsafe if corrupted OR (classified with clearance > 3) — either alone is enough.
+
+2. There's a clarity score filter (like the value filter in Q1), but with a >= threshold.
+   Exactly 50.0 is acceptable. > 50.0 would reject it. Read the constraint carefully.
+
+Getting this logic right — especially the OR vs AND — is where interview candidates
+most often make mistakes.
+
+
+THE OR LOGIC IN THE VALIDATOR
+--------------------------------
+The lambda structure:
+
+  engram -> {
+      if (engram.isCorrupted()) return false;
+      if (engram instanceof ClassifiedEngram) {
+          return ((ClassifiedEngram) engram).getSecurityClearanceLevel() <= 3;
+      }
+      return true;
+  }
+
+Step through it:
+  - If corrupted: reject immediately. Don't bother checking anything else.
+  - If classified: only allow clearance levels 1, 2, or 3. Level 4 or 5 → reject.
+  - Otherwise (standard, not corrupted): always pass.
+
+The early return on isCorrupted() is a minor optimization — if the memory is
+corrupted, there's no point checking its clearance level. Short-circuit as soon
+as you know the answer.
+
+
+ENGRAM FATE TABLE
+------------------
+  ID      Clarity  Corrupted  Type           Clearance  Result
+  ─────────────────────────────────────────────────────────────
+  E-001   85.5     false      Standard       —          ✓ included
+  E-002   40.0     false      Standard       —          ✗ clarity < 50
+  E-003   70.0     true       Standard       —          ✗ corrupted
+  E-004   90.0     false      Classified     2          ✓ included
+  E-005   88.0     false      Classified     5          ✗ clearance > 3
+  E-006   95.0     true       Classified     1          ✗ corrupted (checked first)
+  E-007   62.0     false      Standard       —          ✓ included
+  E-008   55.0     false      Classified     3          ✓ exactly 3 is OK (not > 3)
+  E-009   48.5     false      Classified     1          ✗ clarity < 50
+  E-010   99.0     false      Standard       —          ✓ included
+
+
+THE PIPELINE FLOW
+------------------
+  engrams.stream()
+    → validator filter:  10 → 6 (removes E-003, E-005, E-006, E-009... wait, E-009 passes validator)
+    → clarity filter:    removes E-002 (40.0 < 50) and E-009 (48.5 < 50)
+    → translator map:    surviving 5 engrams → formatted strings
+    → collect:           List<String> returned
+
+Final survivors: E-001, E-004, E-007, E-008, E-010
+
+
+SAMPLE OUTPUT
+--------------
+===== NEUROLINK MEMORY DASHBOARD =====
+
+Total engrams submitted: 10
+Safe engrams processed:  5
+
+--- Translated Memories ---
+ENGRAM-E-001 | CLARITY: 85.5%
+ENGRAM-E-004 | CLARITY: 90.0%
+ENGRAM-E-007 | CLARITY: 62.0%
+ENGRAM-E-008 | CLARITY: 55.0%
+ENGRAM-E-010 | CLARITY: 99.0%

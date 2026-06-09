@@ -1,0 +1,114 @@
+Day4 Q8 ANSWER — Short-Circuit Optimization Proof
+===================================================
+Concepts: Stream Laziness, Vertical Processing, peek(), limit(),
+          Short-Circuit Evaluation, findFirst() vs sort-then-take
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+Most beginners assume streams process HORIZONTALLY:
+  "filter ALL 10 elements first, then limit to 3, then collect"
+
+That's wrong. Streams are LAZY and process VERTICALLY:
+  "send element 1 through the ENTIRE pipeline before touching element 2"
+
+And short-circuit operations (limit, findFirst, anyMatch) TERMINATE the entire
+pipeline the moment their condition is satisfied. Elements still waiting in
+the source list are never handed to the pipeline at all.
+
+peek() is how we prove this. It's a transparent window into the pipeline —
+we can see exactly which elements were processed and when it all stopped.
+
+
+HORIZONTAL vs VERTICAL — THE MENTAL MODEL
+-------------------------------------------
+HORIZONTAL (how beginners think):
+  Pass 1: [1500, 3000, 12000, 5000, 18000, 2500, 15000, 25000, 400, 11000]
+           → filter all 10 → [12000, 18000, 15000, 25000, 11000]
+  Pass 2: → limit to 3 → [12000, 18000, 15000]
+  Total elements inspected: 10
+
+VERTICAL (how streams actually work):
+  Element 1500.0  → inspect → filter (fails, < 10000) → stop here, discard
+  Element 3000.0  → inspect → filter (fails) → stop here, discard
+  Element 12000.0 → inspect → filter (passes!) → limit count = 1
+  Element 5000.0  → inspect → filter (fails) → discard
+  Element 18000.0 → inspect → filter (passes!) → limit count = 2
+  Element 2500.0  → inspect → filter (fails) → discard
+  Element 15000.0 → inspect → filter (passes!) → limit count = 3 → PIPELINE TERMINATES
+  Element 25000.0 → NEVER INSPECTED
+  Element 400.0   → NEVER INSPECTED
+  Element 11000.0 → NEVER INSPECTED
+
+
+WHAT peek() DOES AND DOESN'T DO
+---------------------------------
+peek() is an intermediate operation — it doesn't consume the stream.
+It just lets you observe each element as it passes through, without modifying it.
+
+"Non-interfering" means: your peek lambda should not change the elements or
+the source collection. If you tried to modify elements inside peek(), you'd
+get undefined behavior and potential ConcurrentModificationException.
+
+Use peek() for: debugging, logging, auditing, proving evaluation order.
+Never use it to: transform data (use map()), accumulate results (use collect()).
+
+
+THE BROKEN ALTERNATIVE — WHY NOT SORT-THEN-LIMIT?
+---------------------------------------------------
+Junior developer approach:
+  transactions.stream()
+      .filter(amt -> amt > 10000)
+      .sorted(Comparator.reverseOrder())  // sorts ALL matching elements first
+      .limit(3)
+      .collect(...)
+
+This processes EVERY element that passes the filter before limit() applies.
+For 1 million transactions with 50,000 fraudulent ones, you sort all 50,000
+before taking 3. That's 50,000 comparisons you didn't need to make.
+
+The correct approach (no sort needed): just filter and limit. The first 3
+that pass the filter are the first 3 suspicious ones chronologically.
+If you want the TOP 3 by amount, you DO need a sort — but that's a different
+requirement and has a different cost/benefit tradeoff.
+
+
+PROCESSING LOG WALKTHROUGH
+----------------------------
+  [INSPECTING] $1500.0    → fails filter (< 10000) → discarded
+  [INSPECTING] $3000.0    → fails filter → discarded
+  [INSPECTING] $12000.0   → passes filter
+  [ALERT] Flagged: $12000.0          (fraud count = 1)
+  [INSPECTING] $5000.0    → fails filter → discarded
+  [INSPECTING] $18000.0   → passes filter
+  [ALERT] Flagged: $18000.0          (fraud count = 2)
+  [INSPECTING] $2500.0    → fails filter → discarded
+  [INSPECTING] $15000.0   → passes filter
+  [ALERT] Flagged: $15000.0          (fraud count = 3 → LIMIT HIT → STOP)
+  ─── pipeline shuts down ───
+  $25000.0, $400.0, $11000.0 are never touched
+
+
+SAMPLE OUTPUT
+--------------
+===== FRAUD DETECTION: SHORT-CIRCUIT PROOF =====
+Total transactions in dataset: 10
+Fraud threshold: > $10,000.00
+Limit: first 3 fraud hits
+
+--- Stream Processing Log ---
+  [INSPECTING] Transaction: $1500.0
+  [INSPECTING] Transaction: $3000.0
+  [INSPECTING] Transaction: $12000.0
+  [ALERT] Flagged as potentially fraudulent: $12000.0
+  [INSPECTING] Transaction: $5000.0
+  [INSPECTING] Transaction: $18000.0
+  [ALERT] Flagged as potentially fraudulent: $18000.0
+  [INSPECTING] Transaction: $2500.0
+  [INSPECTING] Transaction: $15000.0
+  [ALERT] Flagged as potentially fraudulent: $15000.0
+
+--- Result ---
+Fraudulent transactions found: [12000.0, 18000.0, 15000.0]
+
+$25,000.0, $400.0, and $11,000.0 were NEVER inspected.

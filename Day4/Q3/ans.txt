@@ -1,0 +1,82 @@
+Day4 Q3 ANSWER — AstroDyne Thruster Telemetry Analyzer
+========================================================
+Concepts: mapToDouble(), DoubleStream, OptionalDouble,
+          Primitive Streams vs Object Streams, .orElse()
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+Q1 and Q2 both ended with .map() → String and .collect() → List.
+This question introduces a different ending: .mapToDouble() → DoubleStream
+and then a mathematical terminal operation (.max()).
+
+Two things to understand here:
+
+1. Why mapToDouble() instead of map()?
+   If you used .map(log -> log.getCoreTemperature()), you'd get a Stream<Double>
+   (capital D). That means every temperature value gets wrapped in a Double object
+   on the heap. For a million telemetry logs, that's a million Double objects being
+   created and garbage collected. mapToDouble() produces a DoubleStream of
+   primitive doubles — no heap objects, no GC pressure, faster math operations.
+
+2. Why does .max() return OptionalDouble, not double?
+   Because the stream might be empty — what if no logs passed the filter?
+   There's no "peak temperature" to return. Java's way of representing
+   "there might not be a value" is Optional. The safe unpacking method is
+   .orElse(0.0) — use a fallback if nothing was found.
+   Never call .getAsDouble() directly — it throws NoSuchElementException on empty.
+
+
+Stream<EngineLog> vs DoubleStream — WHAT CHANGES
+--------------------------------------------------
+  Stream<EngineLog>     → general-purpose, holds objects
+  .mapToDouble(...)     → converts to DoubleStream (primitive)
+  DoubleStream          → has math-specific operations: sum(), max(), min(), average()
+                          these aren't on Stream<T> because T might not be numeric
+
+You CAN do .map(log -> log.getTemp()).reduce(Double.MIN_VALUE, Double::max)
+on a Stream<Double>, but that's clunky. DoubleStream.max() is cleaner and faster.
+
+
+OPTIONALDOUBLE — THE RIGHT WAY TO HANDLE IT
+---------------------------------------------
+  .max()               → returns OptionalDouble
+  .orElse(0.0)         → if present, gives you the double; if empty, gives you 0.0
+  .getAsDouble()       → only call this after .isPresent() check, otherwise danger
+
+For this problem, 0.0 makes sense as a fallback because "no critical logs found"
+means no peak temperature — returning 0.0 signals that clearly.
+
+
+LOG FATE TABLE
+---------------
+  Log     Temp    Anomaly  Type        ErrorCode   Audited?
+  ────────────────────────────────────────────────────────
+  T+001   3200    false    Nominal     —           ✗ not critical
+  T+002   3450    true     Nominal     —           ✓ anomaly
+  T+003   4800    true     Critical    OVERHEAT    ✓ anomaly + OVERHEAT
+  T+004   3900    false    Critical    PRESSURE    ✗ not anomaly, not OVERHEAT
+  T+005   3100    false    Nominal     —           ✗ not critical
+  T+006   5200    true     Critical    OVERHEAT    ✓ ← THIS IS THE MAX
+  T+007   4100    false    Critical    VIBRATION   ✗ not anomaly, not OVERHEAT
+  T+008   6000    false    Nominal     —           ✗ not critical (even though highest temp!)
+  T+009   4950    true     Critical    OVERHEAT    ✓ anomaly + OVERHEAT
+  T+010   3300    true     Nominal     —           ✓ anomaly
+
+Critical temps (audited): 3450, 4800, 5200, 4950, 3300
+max() of those = 5200 (T+006)
+
+T+008 has 6000K — the highest raw temperature — but it's a NominalLog and
+isAnomaly=false, so the auditor rejects it. The pipeline only sees what the
+auditor lets through.
+
+
+SAMPLE OUTPUT
+--------------
+===== ASTRODYNE THRUSTER TELEMETRY REPORT =====
+
+Total logs analyzed: 10
+Peak Critical Temperature: 5200.0 K
+
+Note: T+008 (6000K) was excluded — not flagged as critical.
+Highest confirmed critical temperature: 5200.0 K (T+006)

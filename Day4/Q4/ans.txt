@@ -1,0 +1,99 @@
+Day4 Q4 ANSWER — ChronoCorp Temporal Paradox Detector
+=======================================================
+Concepts: flatMap(), Context-Preserving flatMap, Two-Parameter
+          Functional Interface, Stream<List<T>> vs flat Stream<T>
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+flatMap() is the operator people use without fully understanding until a
+question like this forces them to think carefully.
+
+The naive version of this problem: just flatMap the entities out of the events
+and filter. But then you lose track of which event year each entity appeared in,
+and the ParadoxChecker needs both pieces of information to do its job.
+
+The key insight: before flattening, wrap each entity with its event's year
+in a helper object (EntityInYear). That way, the context survives the flatMap
+and is available during the filter step.
+
+
+map() vs flatMap() — THE CORE DISTINCTION
+-------------------------------------------
+Given: List<HistoricalEvent>, each event has List<TemporalEntity>
+
+If you use .map(event -> event.getEntities()):
+  Stream<List<TemporalEntity>>   ← a stream of lists, not entities
+  You can't call .filter(entity -> ...) on this — you're filtering Lists, not entities.
+
+If you use .flatMap(event -> event.getEntities().stream()):
+  Stream<TemporalEntity>         ← one flat stream of every entity across all events
+  Now you can filter individual entities.
+
+flatMap says: "for each element, produce a stream, then merge all those
+streams into one." map says: "for each element, produce one replacement element."
+
+
+THE CONTEXT PROBLEM — WHY EntityInYear EXISTS
+------------------------------------------------
+After a blind flatMap, you'd have:
+  Stream<TemporalEntity> — just entities, no knowledge of which year they came from.
+
+But the checker needs: checker.isParadox(entity, eventYear)
+It needs the eventYear. Where does it come from?
+
+The solution: before flattening, pair each entity with its event year.
+
+  .flatMap(event ->
+      event.getEntities().stream()
+          .map(entity -> new EntityInYear(entity, event.getEventYear()))
+  )
+
+Now instead of losing the event context, we carry it alongside the entity.
+The resulting Stream<EntityInYear> has everything the checker needs.
+
+This is a common real-world pattern: when you flatten a nested structure,
+decide what parent context you need to preserve, and attach it before flattening.
+
+
+TWO-PARAMETER FUNCTIONAL INTERFACE
+-------------------------------------
+Notice: ParadoxChecker takes TWO parameters (entity, eventYear).
+Java's built-in Predicate<T> only takes one. BiPredicate<T, U> takes two,
+but it's generic — it doesn't say anything about what T and U mean in this domain.
+
+Custom functional interface:
+  interface ParadoxChecker { boolean isParadox(TemporalEntity entity, int eventYear); }
+
+This is clearer. When you see ParadoxChecker in a method signature, you know
+exactly what kind of check is being performed and what data it needs.
+
+
+PARADOX DETECTION TABLE
+------------------------
+  Event Year  Entity              Origin Year  Paradox?
+  ─────────────────────────────────────────────────────
+  1850        Abraham Lincoln     1809         ✗ 1809 < 1850
+  1850        Dr. Elena Voss      2075         ✓ 2075 > 1850 → PARADOX
+  1850        Steam Engine        1765         ✗ 1765 < 1850
+  1969        Neil Armstrong      1930         ✗ 1930 < 1969
+  1969        Smartphone          2007         ✓ 2007 > 1969 → PARADOX
+  1969        Agent X-9           2150         ✓ 2150 > 1969 → PARADOX
+  1969        Moon Rock           1969         ✗ equal, not greater
+  2024        Researcher Yuki     1992         ✗ 1992 < 2024
+  2024        Quantum CPU         2380         ✓ 2380 > 2024 → PARADOX
+  2024        Time Cop Maria      2024         ✗ equal, not greater
+
+
+SAMPLE OUTPUT
+--------------
+===== CHRONOCORP TEMPORAL PARADOX REPORT =====
+
+Historical events scanned: 3
+Paradoxes detected: 4
+
+--- Threat Reports ---
+Dr. Elena Voss detected out of time!
+Smartphone detected out of time!
+Agent X-9 detected out of time!
+Quantum CPU detected out of time!

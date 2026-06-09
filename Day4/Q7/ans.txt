@@ -1,0 +1,85 @@
+Day4 Q7 ANSWER — Multi-Tiered Audit Log Merger
+===============================================
+Concepts: Collectors.toUnmodifiableMap(), Merge Function,
+          Duplicate Key Handling, Set-Based Deduplication
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+The default Collectors.toMap() is a trap for beginners. It works perfectly
+when every key in the stream is unique. But the moment it sees a duplicate key,
+it throws IllegalStateException and crashes your entire pipeline.
+
+For login logs, the same userId appears every time that user logs in.
+Multiple entries for the same user is not an error — it's expected.
+The fix is a merge function: a third argument to toMap() that tells the collector
+"when you see a key that already exists, here's how to combine the old value
+and the new value instead of crashing."
+
+
+THE THREE-ARGUMENT toMap() SIGNATURE
+--------------------------------------
+  Collectors.toMap(
+      keyExtractor,     // Function: what is the Map key?
+      valueExtractor,   // Function: what is the Map value for a single element?
+      mergeFunction     // BinaryOperator: what do we do when the key already exists?
+  )
+
+Without the merge function (2-arg version):
+  U-101 appears twice → IllegalStateException: "Duplicate key U-101" → crash.
+
+With the merge function:
+  U-101 appears twice → merge function is called with (existingSet, newSet)
+  → we add the new IP to the existing set and return it → no crash.
+
+
+WHY SET INSTEAD OF LIST FOR THE VALUES?
+-----------------------------------------
+A user might log in from the same IP address multiple times (same IP, different
+timestamps). We don't want to count that IP twice in the report.
+
+A HashSet automatically deduplicates — adding the same string twice keeps only
+one copy. A List would accumulate duplicates. For a security audit showing unique
+IP addresses, Set is the correct choice.
+
+
+toUnmodifiableMap() vs toMap()
+--------------------------------
+toMap() creates a mutable HashMap. After collection, anyone can call .put() on it
+and add fake data to the security report.
+
+toUnmodifiableMap() wraps the result in an unmodifiable view. Any attempt to
+modify the returned map throws UnsupportedOperationException.
+
+For a security audit result that other services read from, immutability is the
+right default. The report should be read-only once produced.
+
+
+USER IP TABLE
+--------------
+  User   Log entries   Unique IPs
+  ──────────────────────────────────────────────────────
+  U-101  4 logs        3 IPs: 192.168.1.1, 203.0.113.50, 10.10.10.10
+         (192.168.1.1 appears twice — deduplicated by HashSet)
+  U-102  3 logs        2 IPs: 10.0.0.5, 10.0.0.99
+         (10.0.0.5 appears twice — deduplicated)
+  U-103  2 logs        1 IP:  172.16.0.1 (same IP both times — deduplicated)
+  U-104  1 log         1 IP:  198.51.100.14
+
+
+SAMPLE OUTPUT
+--------------
+===== SECURITY AUDIT: USER IP MAPPING =====
+
+Total log entries: 10
+Unique users:      4
+
+--- User → Unique IP Addresses ---
+U-101 → [10.10.10.10, 192.168.1.1, 203.0.113.50]
+U-102 → [10.0.0.5, 10.0.0.99]
+U-103 → [172.16.0.1]
+U-104 → [198.51.100.14]
+
+--- Security Alert: Users with multiple IPs ---
+  U-101 logged in from 3 different IPs — review recommended
+  U-102 logged in from 2 different IPs — review recommended

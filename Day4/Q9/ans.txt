@@ -1,0 +1,107 @@
+Day4 Q9 ANSWER — Banking Functional Rule Engine
+================================================
+Concepts: Predicate<T>, .and(), .or(), .negate(),
+          Predicate Chaining, Default Methods on Functional Interfaces
+
+
+WHAT'S THE BIG IDEA HERE?
+--------------------------
+Before functional interfaces, complex validation logic looked like this:
+
+  if (user.getAge() >= 18 && user.isActive() && user.getEmail().contains("@enterprise.com")) {
+      // eligible
+  }
+
+That works. But it's a single monolithic condition. If you want to reuse just the
+age check somewhere else, you can't — it's fused with the other two. If the email
+rule changes, you have to find every if statement that includes that check.
+
+Predicate chaining solves this by separating each rule into its own object:
+  Predicate<BankUser> isAdult    = user -> user.getAge() >= 18;
+  Predicate<BankUser> isActive   = user -> user.isActive();
+  Predicate<BankUser> isCorporate = user -> user.getEmail().contains("@enterprise.com");
+
+Now each rule can be:
+  - Tested in isolation (unit tested independently)
+  - Reused in other contexts (isAdult alone can be used in a loan eligibility check)
+  - Composed differently for different use cases (maybe a different service only needs isAdult.and(isActive))
+
+
+HOW .and(), .or(), .negate() WORK INTERNALLY
+----------------------------------------------
+These are DEFAULT METHODS on the Predicate interface — they're built in.
+
+  isAdult.and(isActive):
+    Creates a NEW Predicate that returns true only if BOTH isAdult.test(x)
+    AND isActive.test(x) return true.
+    Short-circuits: if isAdult returns false, isActive is never evaluated.
+
+  ruleA.or(ruleB):
+    Creates a new Predicate that returns true if EITHER returns true.
+    Short-circuits: if ruleA returns true, ruleB is never evaluated.
+
+  rule.negate():
+    Creates a new Predicate that flips the result. true → false, false → true.
+    Useful for: "give me everyone who DOESN'T qualify" without rewriting the rule.
+
+The fact that these are default methods on the Predicate interface is key.
+Before Java 8, interfaces couldn't have method bodies. These methods could only
+have existed in a utility class (like Collections). Java 8 put them directly
+on the interface — composable, self-contained, no helper needed.
+
+
+.test() — THE SINGLE ABSTRACT METHOD
+---------------------------------------
+Predicate<T> has exactly one abstract method: boolean test(T t).
+That's what makes it a functional interface — it can be implemented by a lambda.
+
+compositeRuleEngine.test(user) triggers the ENTIRE chain. Internally:
+  isAdult.test(user) → if false, stop, return false
+  isActive.test(user) → if false, stop, return false
+  isCorporate.test(user) → return its result
+
+All three lambdas execute in sequence (with short-circuit on failure).
+One .test() call, the whole rule set applied.
+
+
+USER EVALUATION TABLE
+-----------------------
+  Name           Age  Active  Email               Result
+  ─────────────────────────────────────────────────────────────
+  Alice Chen     25   true    @enterprise.com     ✓ ELIGIBLE (all 3 pass)
+  Bob Junior     16   true    @enterprise.com     ✗ REJECTED (isAdult fails, stops there)
+  Carol Webb     30   false   @enterprise.com     ✗ REJECTED (isActive fails)
+  Dan Kumar      28   true    @gmail.com           ✗ REJECTED (isCorporate fails)
+  Eve Martinez   22   true    @enterprise.com     ✓ ELIGIBLE (all 3 pass)
+  Frank Zhao     17   false   @enterprise.com     ✗ REJECTED (isAdult fails first)
+  Grace Okonkwo  35   true    @enterprise.com     ✓ ELIGIBLE (all 3 pass)
+
+
+SAMPLE OUTPUT
+--------------
+===== BANKING USER ELIGIBILITY ENGINE =====
+
+Rules applied:
+  1. Must be 18 or older
+  2. Account must be active
+  3. Email must contain @enterprise.com
+
+  Alice Chen (25, active, @enterprise.com)   → ✓ ELIGIBLE
+  Bob Junior (16, active, @enterprise.com)   → ✗ REJECTED
+  Carol Webb (30, inactive, @enterprise.com) → ✗ REJECTED
+  Dan Kumar  (28, active, @gmail.com)         → ✗ REJECTED
+  Eve Martinez (22, active, @enterprise.com) → ✓ ELIGIBLE
+  Frank Zhao (17, inactive, @enterprise.com) → ✗ REJECTED
+  Grace Okonkwo (35, active, @enterprise.com)→ ✓ ELIGIBLE
+
+--- Using stream pipeline with composite predicate ---
+Eligible users:
+  Alice Chen
+  Eve Martinez
+  Grace Okonkwo
+
+Ineligible users:
+  Bob Junior
+  Carol Webb
+  Dan Kumar
+  Frank Zhao
