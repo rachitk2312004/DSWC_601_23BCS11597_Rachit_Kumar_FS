@@ -1,0 +1,19 @@
+Q5: The StreamHub Webhook Dispatcher
+
+1. Problem Overview
+The dispatcher must wait until every singleton bean is fully created before it builds its routing table. That makes this a late-stage lifecycle problem rather than a simple injection problem.
+
+2. ApplicationContextAware
+ApplicationContextAware gives the dispatcher access to the Spring container. That is useful when dynamic bean lookup is needed.
+
+3. SmartInitializingSingleton
+afterSingletonsInstantiated() is the key hook here. It runs after all singleton beans are created, which is the right time to discover all webhook integrations.
+
+4. getBeansOfType()
+The dispatcher uses getBeansOfType(WebhookIntegration.class) to retrieve a map of bean names and instances. That is ideal for plugin-style routing systems.
+
+5. Source Files Included
+WebhookDispatcherApplication.java, WebhookIntegration.java, SlackIntegration.java, DiscordIntegration.java, EmailIntegration.java, WebhookDispatcher.java
+
+6. Conclusion
+This module demonstrates context awareness and whole-container initialization timing.

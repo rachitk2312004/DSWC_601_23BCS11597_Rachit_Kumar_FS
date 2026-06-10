@@ -1,0 +1,13 @@
+Q7: The Circular Deadlock
+
+1. Problem Overview
+Constructor injection on both sides of a circular relationship causes Spring startup failure because each bean waits for the other bean to exist.
+
+2. Two-Phase Initialization
+The fix is to let one side be created first and wired later. Setter injection allows Spring to instantiate OrderService first, then create InventoryService, and finally inject InventoryService back into OrderService.
+
+3. Source Files Included
+CircularDependencyResolutionApplication.java, OrderService.java, InventoryService.java
+
+4. Conclusion
+This module shows how setter injection can break a circular dependency that constructor injection cannot resolve.

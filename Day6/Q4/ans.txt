@@ -1,0 +1,19 @@
+Q4: The SecureBank Compliance Auditor
+
+1. Problem Overview
+The application needs to audit sensitive beans automatically. Any bean implementing the PIIProcessor marker interface should be registered for compliance logging without adding manual code to each class.
+
+2. BeanPostProcessor
+BeanPostProcessor is the correct extension point because it runs for every bean created by Spring. postProcessBeforeInitialization returns the bean unchanged, while postProcessAfterInitialization can inspect the bean and act on it.
+
+3. Marker Interface Filtering
+The PIIProcessor interface identifies sensitive components. TransactionService implements it, while PublicCurrencyService does not. That makes the filtering clear and easy to maintain.
+
+4. Safer Registration
+ObjectProvider<SecurityRegistry> avoids forcing early creation of the registry bean during BeanPostProcessor construction. That is a cleaner Spring-friendly pattern.
+
+5. Source Files Included
+AuditInfrastructureApplication.java, PIIProcessor.java, TransactionService.java, PublicCurrencyService.java, SecurityRegistry.java, LifecycleAuditProcessor.java
+
+6. Conclusion
+This module demonstrates custom lifecycle interception and clean marker-based auditing.

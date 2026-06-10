@@ -1,0 +1,16 @@
+Q3: The GlobalPay Gateway Router
+
+1. Problem Overview
+This question combines modern Spring beans with a legacy payment processor that cannot be annotated directly. The system also needs to avoid ambiguity when multiple beans implement the same interface.
+
+2. FactoryBean
+FactoryBean is used for the legacy BankXmlProcessor because its construction is complex and must be hidden behind Spring-friendly creation logic. Spring will call the factory and place the created object into the container.
+
+3. @Primary and @Qualifier
+StripeProcessor is marked @Primary, so it becomes the default PaymentProcessor. The legacy bank processor is selected explicitly with @Qualifier("bankXmlProcessor"). That removes ambiguity and prevents NoUniqueBeanDefinitionException.
+
+4. Source Files Included
+CheckoutServiceApplication.java, PaymentProcessor.java, StripeProcessor.java, SquareProcessor.java, BankXmlProcessor.java, BankXmlProcessorFactoryBean.java, CheckoutService.java
+
+5. Conclusion
+This is the right pattern for mixing normal Spring beans with custom legacy object creation.

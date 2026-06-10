@@ -1,0 +1,16 @@
+Q10: The Lifecycle Interceptor
+
+1. Problem Overview
+This question requires a custom BeanPostProcessor that detects all beans implementing a marker interface and registers them in a security registry after initialization.
+
+2. BeanPostProcessor
+BeanPostProcessor is one of Spring's deepest container hooks. It lets you inspect beans after creation and apply cross-cutting behavior centrally.
+
+3. Marker Interface Filtering
+Auditable is used as a marker so only the beans that matter are registered. ComplianceService is processed, while GeneralService is ignored.
+
+4. Source Files Included
+LifecycleAuditApplication.java, Auditable.java, ComplianceService.java, GeneralService.java, SecurityRegistry.java, LifecycleAuditProcessor.java
+
+5. Conclusion
+This module demonstrates container interception and centralized compliance registration.

@@ -1,0 +1,19 @@
+Q2: The MedScan Radiology Orchestrator
+
+1. Problem Overview
+The orchestrator is a singleton, but it depends on a heavy rendering engine and a fresh patient context for each scan. The key challenge is to delay expensive initialization and prevent shared state between scans.
+
+2. Lazy Initialization
+The ImageRenderingEngine is marked with @Lazy so Spring does not create it during startup. Instead, the real object is created only when the orchestrator first uses it. This reduces startup cost and memory usage.
+
+3. Prototype-in-Singleton Handling
+PatientContext is prototype-scoped, which means a new instance should be created each time it is requested. Injecting it directly into a singleton would turn it into a reused instance. That would cause patient data leakage.
+
+4. ObjectProvider Solution
+ObjectProvider<PatientContext> is the correct modern Spring solution because it can request a fresh prototype bean at method time. That keeps each MRI scan isolated.
+
+5. Source Files Included
+ScanOrchestratorApplication.java, ImageRenderingEngine.java, PatientContext.java, ScanOrchestrator.java
+
+6. Conclusion
+This project demonstrates lazy loading and safe dynamic prototype lookup in a clean Spring layout.

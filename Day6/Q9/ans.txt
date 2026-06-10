@@ -1,0 +1,16 @@
+Q9: Ambiguous Infrastructure Contracts
+
+1. Problem Overview
+Multiple implementations of the same interface create ambiguity in Spring. The container needs help deciding whether to inject one specific implementation or all implementations.
+
+2. Targeted Injection
+@Qualifier("smsNotificationService") selects the exact bean that should be injected.
+
+3. Collection Injection
+List<NotificationService> automatically receives all matching beans. That is useful for broadcast workflows.
+
+4. Source Files Included
+NotificationRoutingApplication.java, NotificationService.java, EmailNotificationService.java, SmsNotificationService.java, PushNotificationService.java, NotificationRoutingService.java
+
+5. Conclusion
+This module shows both precise bean selection and scalable broadcast injection.

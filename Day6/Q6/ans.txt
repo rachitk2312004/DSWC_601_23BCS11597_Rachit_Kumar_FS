@@ -1,0 +1,13 @@
+Q6: The Stale Prototype Trap
+
+1. Problem Overview
+A singleton ReportManager should not hold on to one prototype task instance. If it does, every request will reuse the same task object and data can leak between threads.
+
+2. ObjectFactory Solution
+ObjectFactory lets the singleton ask Spring for a fresh prototype bean each time generate() runs. That keeps the code decoupled from the container and avoids using new directly.
+
+3. Source Files Included
+ReportManagerApplication.java, ReportTask.java, ReportManager.java
+
+4. Conclusion
+This is the correct way to request a fresh prototype from a singleton at runtime.

@@ -1,0 +1,28 @@
+Q1: The Algorithmic Trading Engine Initialization
+
+1. Problem Overview
+This question tests Spring dependency injection and lifecycle handling in a trading-engine style service. The important part is to inject required dependencies through the constructor, optional dependencies through a setter, and use lifecycle callbacks to control startup and shutdown.
+
+2. Design Approach
+The engine depends on MarketDataService and all TradingStrategy implementations. Those are required, so constructor injection is the right approach. It makes the object easier to test and keeps required fields immutable. The AlertService is optional, so setter injection with required=false is used to avoid startup failure if no alert bean exists.
+
+3. Collection Injection
+Spring automatically collects every bean implementing TradingStrategy into the List<TradingStrategy>. That is a clean strategy-pattern setup because the engine does not need hardcoded class names.
+
+4. Lifecycle Ordering
+The bean lifecycle follows the intended sequence:
+- Constructor runs first.
+- Dependencies are injected.
+- BeanNameAware captures the bean name.
+- @PostConstruct warms the cache.
+- afterPropertiesSet() validates the final state.
+- @PreDestroy closes market positions during shutdown.
+
+5. Why This Matters
+A trading engine must not start executing strategies before the market-data cache is ready. It also must shut down safely so no open positions are left unmanaged.
+
+6. Source Files Included
+TradingEngineApplication.java, TradingStrategy.java, AbstractStrategy.java, MomentumStrategy.java, ArbitrageStrategy.java, MarketDataService.java, AlertService.java, DefaultAlertService.java, TradingEngine.java
+
+7. Conclusion
+This module demonstrates constructor injection, optional setter injection, collection injection, and Spring lifecycle control in a clean enterprise-style layout.

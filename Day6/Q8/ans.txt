@@ -1,0 +1,13 @@
+Q8: The Stateful Singleton Race Condition
+
+1. Problem Overview
+Singleton services are shared by many request threads. If transaction state is stored in fields, one user can overwrite another user's values and cause race conditions.
+
+2. Correct Design
+The safe fix is to keep transaction-specific data inside the method. Local variables and method parameters live in the thread stack and are isolated per request.
+
+3. Source Files Included
+ThreadSafePaymentProcessorApplication.java, ThreadSafePaymentProcessor.java
+
+4. Conclusion
+This solution keeps the service stateless and thread-safe.
