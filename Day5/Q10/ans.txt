@@ -1,0 +1,6 @@
+Q10: Cross-Hierarchical Fraud Detection
+
+Theory:
+A SELF JOIN links employees to their managers using the same table twice. A LEFT JOIN with departments preserves employees that do not belong to any department. Filtering with e.dept_id IS NULL reveals potential ghost employees.
+
+(See Java and SQL files for complete solution.)

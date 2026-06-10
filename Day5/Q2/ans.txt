@@ -1,0 +1,119 @@
+Q2: The Edixo Enrollment Engine (Missing Records and Batching)
+
+1. Problem Overview
+The system must find students who have no course registrations and then automatically enroll them in Orientation 101. This is a classic missing-record problem, and the best relational pattern for it is an outer join followed by a NULL check.
+
+2. SQL Solution
+The query uses LEFT JOIN because we want all students from the left table. If a student has no matching row in course_registrations, the joined columns become NULL. Filtering with WHERE cr.student_id IS NULL returns only the students who are missing registrations.
+
+3. Index Strategy
+The course_registrations table must have an index on student_id. PostgreSQL does not automatically create an index for a foreign key column, so without this index the join can become very expensive on large tables.
+
+4. Why LEFT JOIN ... IS NULL
+This pattern is usually better than NOT IN because NOT IN can behave badly when NULLs are present in the subquery. LEFT JOIN ... IS NULL is safer and more common in production SQL.
+
+5. JDBC Batch Processing
+The insertion step may affect many rows. Instead of running one INSERT for every student, the code uses addBatch() and executeBatch(). This reduces network round-trips and improves throughput.
+
+6. Transaction Handling
+The entire enrollment process runs inside one transaction:
+- auto-commit is disabled,
+- inserts are batched,
+- commit is called only after all successful inserts,
+- rollback is called if anything fails.
+This prevents partial enrollment.
+
+7. OOP Design
+- RegistrationManager defines the behavior.
+- DatabaseConnectionProvider holds the connection logic.
+- EdixoRegistrationRepository implements the actual workflow.
+This is a clean separation of concerns.
+
+8. Conclusion
+This solution is suitable for large-scale enrollment automation because it combines a correct anti-join, a supporting index, and efficient batch inserts.
+
+Complete Java Code
+--------------------------------
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+interface RegistrationManager {
+    void enrollAtRiskStudents();
+}
+
+abstract class DatabaseConnectionProvider {
+    private final String url;
+    private final String user;
+    private final String password;
+
+    protected DatabaseConnectionProvider() {
+        this("jdbc:postgresql://localhost:5432/edixo", "postgres", "password");
+    }
+
+    protected DatabaseConnectionProvider(String url, String user, String password) {
+        this.url = url;
+        this.user = user;
+        this.password = password;
+    }
+
+    protected Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(url, user, password);
+    }
+}
+
+public class EdixoRegistrationRepository extends DatabaseConnectionProvider implements RegistrationManager {
+    @Override
+    public void enrollAtRiskStudents() {
+        String findMissingStudents =
+                "SELECT s.student_id, s.full_name " +
+                "FROM students s " +
+                "LEFT JOIN course_registrations cr ON s.student_id = cr.student_id " +
+                "WHERE cr.student_id IS NULL";
+
+        String insertCourse =
+                "INSERT INTO course_registrations (student_id, course_code, semester) " +
+                "VALUES (?, ?, ?)";
+
+        try (Connection conn = getConnection();
+             PreparedStatement selectPs = conn.prepareStatement(findMissingStudents);
+             PreparedStatement insertPs = conn.prepareStatement(insertCourse)) {
+
+            conn.setAutoCommit(false);
+
+            try (ResultSet rs = selectPs.executeQuery()) {
+                int batchCount = 0;
+
+                while (rs.next()) {
+                    long studentId = rs.getLong("student_id");
+
+                    insertPs.setLong(1, studentId);
+                    insertPs.setString(2, "Orientation101");
+                    insertPs.setString(3, "Current Semester");
+                    insertPs.addBatch();
+                    batchCount++;
+
+                    if (batchCount % 1000 == 0) {
+                        insertPs.executeBatch();
+                    }
+                }
+
+                insertPs.executeBatch();
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to enroll at-risk students", e);
+        }
+    }
+
+    public static void main(String[] args) {
+        new EdixoRegistrationRepository().enrollAtRiskStudents();
+    }
+}

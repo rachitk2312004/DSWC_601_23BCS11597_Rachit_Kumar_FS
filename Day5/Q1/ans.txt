@@ -1,0 +1,93 @@
+Q1: The Logistics Bottleneck (CargoLogix System)
+
+1. Problem Overview
+The CargoLogix dashboard repeatedly fetches all delayed shipments and sorts them by dispatch date. On a table with tens of millions of rows, a simple filter is not enough. The query must be designed so PostgreSQL can use an index both for filtering and for ordering.
+
+2. SQL Solution
+The query uses an INNER JOIN between shipments and couriers because each shipment belongs to one courier. It filters only rows where status = 'DELAYED' and sorts them by dispatch_date in descending order.
+
+3. Index Strategy
+A single-column index on status would not fully solve the problem because PostgreSQL would still have to sort the delayed rows after finding them. The correct optimization is a composite B-tree index on (status, dispatch_date DESC). This matches the WHERE clause and the ORDER BY clause together.
+
+4. Why This Works
+With the composite index:
+- PostgreSQL quickly finds only the DELAYED rows.
+- The rows are already arranged in dispatch date descending order.
+- No expensive full table scan or in-memory sort is needed.
+
+5. JDBC and OOP Design
+The Java code follows a clean object-oriented structure:
+- ReportGenerator is the interface.
+- DatabaseRepository stores the database credentials and connection method.
+- LogisticsRepository contains the reporting logic.
+This keeps infrastructure separate from business logic.
+
+6. JDBC Best Practices
+The code uses PreparedStatement so the query is precompiled and safer. It also uses try-with-resources for the Connection, PreparedStatement, and ResultSet, which guarantees proper closing of resources even when an exception occurs.
+
+7. Conclusion
+This solution is efficient, readable, and scalable. The composite index is the main reason the report can run fast on a very large shipments table.
+
+Complete Java Code
+--------------------------------
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+interface ReportGenerator {
+    void printDelayedReport();
+}
+
+abstract class DatabaseRepository {
+    private final String url;
+    private final String user;
+    private final String password;
+
+    protected DatabaseRepository() {
+        this("jdbc:postgresql://localhost:5432/cargologix", "postgres", "password");
+    }
+
+    protected DatabaseRepository(String url, String user, String password) {
+        this.url = url;
+        this.user = user;
+        this.password = password;
+    }
+
+    protected Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(url, user, password);
+    }
+}
+
+public class LogisticsRepository extends DatabaseRepository implements ReportGenerator {
+    @Override
+    public void printDelayedReport() {
+        String sql = "SELECT s.shipment_id, c.company_name, s.dispatch_date " +
+                     "FROM shipments s " +
+                     "INNER JOIN couriers c ON s.courier_id = c.courier_id " +
+                     "WHERE s.status = ? " +
+                     "ORDER BY s.dispatch_date DESC";
+
+        try (Connection conn = getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, "DELAYED");
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long shipmentId = rs.getLong("shipment_id");
+                    String companyName = rs.getString("company_name");
+                    java.sql.Date dispatchDate = rs.getDate("dispatch_date");
+                    System.out.printf("%d | %s | %s%n", shipmentId, companyName, dispatchDate);
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to print delayed shipment report", e);
+        }
+    }
+
+    public static void main(String[] args) {
+        new LogisticsRepository().printDelayedReport();
+    }
+}

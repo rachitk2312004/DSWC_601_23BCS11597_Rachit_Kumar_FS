@@ -1,0 +1,6 @@
+Q8: B-Tree Bypass Defect
+
+Theory:
+Using YEAR(created_at) prevents index usage because a function is applied to the indexed column. Rewriting the query using a date range makes it SARGable and allows the B-Tree index to be traversed efficiently.
+
+(See Java file for complete code.)

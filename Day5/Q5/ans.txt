@@ -1,0 +1,105 @@
+Q5: The Enterprise Job Queue (Concurrency and Partial Indexes)
+
+1. Problem Overview
+A worker queue must fetch the oldest pending engineering job and mark it as processing. Because many worker nodes can run at the same time, the query must avoid race conditions.
+
+2. SQL Solution
+The query joins background_jobs with departments, filters PENDING jobs, orders by created_at ascending, and uses FOR UPDATE SKIP LOCKED. This locks the selected row and skips rows already locked by another worker.
+
+3. Why SKIP LOCKED Is Important
+Without SKIP LOCKED, workers could wait on each other or accidentally pick the same job. SKIP LOCKED makes the queue safe for high concurrency.
+
+4. Partial Index Strategy
+Most rows are COMPLETED, so indexing the whole table is wasteful. A partial index with WHERE status = 'PENDING' keeps the index small and focused only on the rows workers care about.
+
+5. JDBC and Transaction Handling
+The Java code disables auto-commit, selects one job, updates it to PROCESSING, and commits the transaction. If anything goes wrong, rollback restores consistency.
+
+6. OOP Design
+- QueueWorker defines the worker contract.
+- EnterpriseConnectionFactory stores connection logic.
+- QueueWorkerRepository implements the queue processing behavior.
+
+7. Conclusion
+This is a good example of database-level concurrency control combined with a lightweight partial index.
+
+Complete Java Code
+--------------------------------
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+interface QueueWorker {
+    void processNextJob();
+}
+
+abstract class EnterpriseConnectionFactory {
+    private final String url;
+    private final String user;
+    private final String password;
+
+    protected EnterpriseConnectionFactory() {
+        this("jdbc:postgresql://localhost:5432/enterprise", "postgres", "password");
+    }
+
+    protected EnterpriseConnectionFactory(String url, String user, String password) {
+        this.url = url;
+        this.user = user;
+        this.password = password;
+    }
+
+    protected Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(url, user, password);
+    }
+}
+
+public class QueueWorkerRepository extends EnterpriseConnectionFactory implements QueueWorker {
+    @Override
+    public void processNextJob() {
+        String fetchJob =
+                "SELECT b.job_id, d.dept_name, b.created_at " +
+                "FROM background_jobs b " +
+                "INNER JOIN departments d ON b.dept_id = d.dept_id " +
+                "WHERE b.status = 'PENDING' " +
+                "AND d.dept_name = 'Engineering' " +
+                "ORDER BY b.created_at ASC " +
+                "FOR UPDATE SKIP LOCKED " +
+                "LIMIT 1";
+
+        String updateJob =
+                "UPDATE background_jobs SET status = 'PROCESSING' WHERE job_id = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement selectPs = conn.prepareStatement(fetchJob);
+             PreparedStatement updatePs = conn.prepareStatement(updateJob)) {
+
+            conn.setAutoCommit(false);
+
+            try (ResultSet rs = selectPs.executeQuery()) {
+                if (rs.next()) {
+                    long jobId = rs.getLong("job_id");
+                    updatePs.setLong(1, jobId);
+                    updatePs.executeUpdate();
+                    conn.commit();
+                    System.out.println("Job " + jobId + " moved to PROCESSING");
+                } else {
+                    conn.commit();
+                    System.out.println("No pending job available");
+                }
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to process next job", e);
+        }
+    }
+
+    public static void main(String[] args) {
+        new QueueWorkerRepository().processNextJob();
+    }
+}

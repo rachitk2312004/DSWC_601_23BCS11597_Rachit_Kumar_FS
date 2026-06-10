@@ -1,0 +1,6 @@
+Q7: Malicious Wildcard Injection
+
+Theory:
+PreparedStatement prevents SQL injection by separating SQL code from data. Wildcards should be attached in setString() rather than concatenated into SQL text. This ensures user input is treated as data and not executable SQL.
+
+(See Java file for complete code.)

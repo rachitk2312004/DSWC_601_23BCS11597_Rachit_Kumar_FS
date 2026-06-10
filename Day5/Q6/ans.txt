@@ -1,0 +1,6 @@
+Q6: Atomic Order Orchestrator
+
+Theory:
+This problem demonstrates JDBC transaction management. Auto-commit is disabled so inventory deduction and order creation occur in one transaction. If stock is insufficient, a custom exception triggers rollback(), ensuring ACID atomicity. The transaction either completes fully or no change is saved.
+
+(See Java file for complete code.)

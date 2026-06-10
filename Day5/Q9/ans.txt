@@ -1,0 +1,6 @@
+Q9: Relational Object Mapping
+
+Theory:
+The N+1 query problem occurs when one query is executed for departments and additional queries are executed for each department. A single JOIN query removes excessive network calls. Java reconstructs the hierarchy using a HashMap and List collection.
+
+(See Java file for complete code.)
